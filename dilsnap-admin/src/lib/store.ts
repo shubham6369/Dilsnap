@@ -263,6 +263,7 @@ async function persistState(): Promise<void> {
     await put('dilsnap_db.json', JSON.stringify(state), {
       access: 'public',
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
   } catch (error) {
     console.error('Failed to persist snapshot to Vercel Blob:', error);
@@ -284,10 +285,10 @@ async function hydrateState(force = false): Promise<void> {
 
   try {
     const { blobs } = await list({ prefix: 'dilsnap_db.json' });
-    const targetBlob = blobs.find((b) => b.pathname === 'dilsnap_db.json');
+    const targetBlob = blobs.find((b) => b.pathname === 'dilsnap_db.json' || b.pathname.endsWith('dilsnap_db.json'));
 
     if (targetBlob) {
-      const response = await fetch(targetBlob.url, { cache: 'no-store' });
+      const response = await fetch(`${targetBlob.url}?t=${Date.now()}`, { cache: 'no-store' });
       if (response.ok) {
         const remoteData = (await response.json()) as Partial<DatabaseSchema>;
         if (remoteData.hosts) state.hosts = remoteData.hosts;
@@ -314,7 +315,7 @@ async function hydrateState(force = false): Promise<void> {
 // Store API
 export const store = {
   // Ensure the database is loaded from persistent storage
-  ensureInitialized: async (force = false) => {
+  ensureInitialized: async (force = true) => {
     await hydrateState(force);
   },
 
