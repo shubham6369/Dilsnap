@@ -17,6 +17,28 @@ class CoinPackageModel {
     this.isPopular = false,
   });
 
+  factory CoinPackageModel.fromJson(Map<String, dynamic> json) {
+    final coinAmount = json['coins'] as int? ?? 100;
+    String icon = 'assets/image/emerald.png';
+    if (coinAmount >= 1500) {
+      icon = 'assets/image/diamond.png';
+    } else if (coinAmount >= 650) {
+      icon = 'assets/image/sapphire.png';
+    } else if (coinAmount >= 300) {
+      icon = 'assets/image/ruby.png';
+    }
+
+    return CoinPackageModel(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      coins: coinAmount,
+      bonusCoins: json['bonusCoins'] as int? ?? 0,
+      priceInr: (json['priceInr'] as num?)?.toDouble() ?? 99.0,
+      iconAsset: icon,
+      isPopular: json['isPopular'] as bool? ?? false,
+    );
+  }
+
   static List<CoinPackageModel> defaultPackages = const [
     CoinPackageModel(
       id: 'pkg_emerald',

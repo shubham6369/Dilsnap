@@ -1,7 +1,8 @@
 import { Host, User, ActiveCall, CoinPackage, Gift, AppConfig } from './types';
+import { put, list } from '@vercel/blob';
 
-// Pre-seeded verified hosts matching the DilSnap mobile app
-let hosts: Host[] = [
+// Initial pre-seeded verified hosts
+const defaultHosts: Host[] = [
   {
     id: 'lst_101',
     name: 'Priya Sharma',
@@ -106,7 +107,7 @@ let hosts: Host[] = [
   },
 ];
 
-let users: User[] = [
+const defaultUsers: User[] = [
   {
     id: 'usr_001',
     name: 'Rahul Sharma',
@@ -157,7 +158,7 @@ let users: User[] = [
   },
 ];
 
-let activeCalls: ActiveCall[] = [
+const defaultActiveCalls: ActiveCall[] = [
   {
     id: 'call_live_901',
     hostId: 'lst_102',
@@ -172,23 +173,9 @@ let activeCalls: ActiveCall[] = [
     ratePerMinute: 40,
     status: 'active',
   },
-  {
-    id: 'call_live_902',
-    hostId: 'lst_101',
-    hostName: 'Priya Sharma',
-    hostAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-    userId: 'usr_001',
-    userName: 'Rahul Sharma',
-    callType: 'audio',
-    startedAt: new Date(Date.now() - 42000).toISOString(),
-    durationSeconds: 42,
-    coinsBurned: 20,
-    ratePerMinute: 20,
-    status: 'active',
-  },
 ];
 
-let callHistory: ActiveCall[] = [
+const defaultCallHistory: ActiveCall[] = [
   {
     id: 'call_hist_801',
     hostId: 'lst_106',
@@ -203,23 +190,9 @@ let callHistory: ActiveCall[] = [
     ratePerMinute: 30,
     status: 'completed',
   },
-  {
-    id: 'call_hist_802',
-    hostId: 'lst_103',
-    hostName: 'Riya Sen',
-    hostAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80',
-    userId: 'usr_003',
-    userName: 'Amit Patel',
-    callType: 'audio',
-    startedAt: new Date(Date.now() - 14400000).toISOString(),
-    durationSeconds: 210,
-    coinsBurned: 70,
-    ratePerMinute: 20,
-    status: 'completed',
-  },
 ];
 
-let coinPackages: CoinPackage[] = [
+const defaultPackages: CoinPackage[] = [
   { id: 'pkg_starter', name: 'Starter Pack', coins: 100, bonusCoins: 20, priceInr: 99 },
   { id: 'pkg_popular', name: 'Most Popular', coins: 300, bonusCoins: 80, priceInr: 249, isPopular: true },
   { id: 'pkg_value', name: 'Super Value', coins: 650, bonusCoins: 200, priceInr: 499 },
@@ -227,7 +200,7 @@ let coinPackages: CoinPackage[] = [
   { id: 'pkg_royalty', name: 'Royalty Club', coins: 4000, bonusCoins: 1500, priceInr: 2499 },
 ];
 
-let gifts: Gift[] = [
+const defaultGifts: Gift[] = [
   { id: 'gift_like', name: 'Thumbs Up', coinCost: 5, assetPath: 'assets/gif/like.gif', category: 'Popular' },
   { id: 'gift_heart', name: 'Heart Shower', coinCost: 15, assetPath: 'assets/gif/love.gif', category: 'Popular' },
   { id: 'gift_box', name: 'Mystery Gift', coinCost: 30, assetPath: 'assets/gif/gift.gif', category: 'Popular' },
@@ -236,7 +209,7 @@ let gifts: Gift[] = [
   { id: 'gift_crown', name: 'Royal Crown', coinCost: 250, assetPath: 'assets/image/badge.png', category: 'Special' },
 ];
 
-let appConfig: AppConfig = {
+const defaultConfig: AppConfig = {
   appName: 'DilSnap',
   version: '1.0.0',
   maintenanceMode: false,
@@ -253,11 +226,101 @@ let appConfig: AppConfig = {
   },
 };
 
-// Store Operations
+interface DatabaseSchema {
+  hosts: Host[];
+  users: User[];
+  activeCalls: ActiveCall[];
+  callHistory: ActiveCall[];
+  coinPackages: CoinPackage[];
+  gifts: Gift[];
+  appConfig: AppConfig;
+  lastUpdated: string;
+}
+
+// Global In-Memory Working State
+let state: DatabaseSchema = {
+  hosts: [...defaultHosts],
+  users: [...defaultUsers],
+  activeCalls: [...defaultActiveCalls],
+  callHistory: [...defaultCallHistory],
+  coinPackages: [...defaultPackages],
+  gifts: [...defaultGifts],
+  appConfig: { ...defaultConfig },
+  lastUpdated: new Date().toISOString(),
+};
+
+let isHydrated = false;
+let lastHydratedAt = 0;
+const HYDRATION_TTL_MS = 5000; // Re-check blob every 5 seconds on active lambdas
+
+// Asynchronously persist the current database state to Vercel Blob
+async function persistState(): Promise<void> {
+  state.lastUpdated = new Date().toISOString();
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return;
+  }
+  try {
+    await put('dilsnap_db.json', JSON.stringify(state), {
+      access: 'public',
+      addRandomSuffix: false,
+    });
+  } catch (error) {
+    console.error('Failed to persist snapshot to Vercel Blob:', error);
+  }
+}
+
+// Hydrate state from Vercel Blob
+async function hydrateState(force = false): Promise<void> {
+  const now = Date.now();
+  if (isHydrated && !force && now - lastHydratedAt < HYDRATION_TTL_MS) {
+    return;
+  }
+
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    isHydrated = true;
+    lastHydratedAt = now;
+    return;
+  }
+
+  try {
+    const { blobs } = await list({ prefix: 'dilsnap_db.json' });
+    const targetBlob = blobs.find((b) => b.pathname === 'dilsnap_db.json');
+
+    if (targetBlob) {
+      const response = await fetch(targetBlob.url, { cache: 'no-store' });
+      if (response.ok) {
+        const remoteData = (await response.json()) as Partial<DatabaseSchema>;
+        if (remoteData.hosts) state.hosts = remoteData.hosts;
+        if (remoteData.users) state.users = remoteData.users;
+        if (remoteData.activeCalls) state.activeCalls = remoteData.activeCalls;
+        if (remoteData.callHistory) state.callHistory = remoteData.callHistory;
+        if (remoteData.coinPackages) state.coinPackages = remoteData.coinPackages;
+        if (remoteData.gifts) state.gifts = remoteData.gifts;
+        if (remoteData.appConfig) state.appConfig = remoteData.appConfig;
+        if (remoteData.lastUpdated) state.lastUpdated = remoteData.lastUpdated;
+      }
+    } else {
+      // First run: save defaults into the blob store
+      await persistState();
+    }
+  } catch (error) {
+    console.error('Hydration from Vercel Blob error:', error);
+  } finally {
+    isHydrated = true;
+    lastHydratedAt = now;
+  }
+}
+
+// Store API
 export const store = {
+  // Ensure the database is loaded from persistent storage
+  ensureInitialized: async (force = false) => {
+    await hydrateState(force);
+  },
+
   // Hosts
   getHosts: (filters?: { gender?: string; onlineOnly?: boolean }) => {
-    let result = [...hosts];
+    let result = [...state.hosts];
     if (filters?.gender && filters.gender !== 'All') {
       result = result.filter((h) => h.gender.toLowerCase() === filters.gender?.toLowerCase());
     }
@@ -267,9 +330,9 @@ export const store = {
     return result;
   },
 
-  getHostById: (id: string) => hosts.find((h) => h.id === id),
+  getHostById: (id: string) => state.hosts.find((h) => h.id === id),
 
-  addHost: (host: Omit<Host, 'id' | 'rating' | 'totalCalls' | 'joinedDate' | 'isInCall' | 'isBanned'>) => {
+  addHost: async (host: Omit<Host, 'id' | 'rating' | 'totalCalls' | 'joinedDate' | 'isInCall' | 'isBanned'>) => {
     const newHost: Host = {
       ...host,
       id: `lst_${Date.now()}`,
@@ -279,119 +342,133 @@ export const store = {
       isBanned: false,
       joinedDate: new Date().toISOString().split('T')[0],
     };
-    hosts.unshift(newHost);
+    state.hosts.unshift(newHost);
+    await persistState();
     return newHost;
   },
 
-  updateHost: (id: string, updates: Partial<Host>) => {
-    const index = hosts.findIndex((h) => h.id === id);
+  updateHost: async (id: string, updates: Partial<Host>) => {
+    const index = state.hosts.findIndex((h) => h.id === id);
     if (index === -1) return null;
-    hosts[index] = { ...hosts[index], ...updates };
-    return hosts[index];
+    state.hosts[index] = { ...state.hosts[index], ...updates };
+    await persistState();
+    return state.hosts[index];
   },
 
-  deleteHost: (id: string) => {
-    const prevLen = hosts.length;
-    hosts = hosts.filter((h) => h.id !== id);
-    return hosts.length < prevLen;
+  deleteHost: async (id: string) => {
+    const prevLen = state.hosts.length;
+    state.hosts = state.hosts.filter((h) => h.id !== id);
+    const deleted = state.hosts.length < prevLen;
+    if (deleted) await persistState();
+    return deleted;
   },
 
   // Users
-  getUsers: () => [...users],
+  getUsers: () => [...state.users],
 
-  getUserById: (id: string) => users.find((u) => u.id === id),
+  getUserById: (id: string) => state.users.find((u) => u.id === id),
 
-  adjustUserCoins: (id: string, delta: number) => {
-    const user = users.find((u) => u.id === id);
+  adjustUserCoins: async (id: string, delta: number) => {
+    const user = state.users.find((u) => u.id === id);
     if (!user) return null;
     user.coinBalance = Math.max(0, user.coinBalance + delta);
+    await persistState();
     return user;
   },
 
-  toggleUserBan: (id: string) => {
-    const user = users.find((u) => u.id === id);
+  toggleUserBan: async (id: string) => {
+    const user = state.users.find((u) => u.id === id);
     if (!user) return null;
     user.isBanned = !user.isBanned;
+    await persistState();
     return user;
   },
 
   // Calls
-  getActiveCalls: () => [...activeCalls],
+  getActiveCalls: () => [...state.activeCalls],
 
-  getCallHistory: () => [...callHistory],
+  getCallHistory: () => [...state.callHistory],
 
-  terminateCall: (callId: string) => {
-    const callIndex = activeCalls.findIndex((c) => c.id === callId);
+  terminateCall: async (callId: string) => {
+    const callIndex = state.activeCalls.findIndex((c) => c.id === callId);
     if (callIndex === -1) return null;
-    const terminated = activeCalls.splice(callIndex, 1)[0];
+    const terminated = state.activeCalls.splice(callIndex, 1)[0];
     terminated.status = 'terminated_by_admin';
-    callHistory.unshift(terminated);
+    state.callHistory.unshift(terminated);
 
     // Free up host inCall status
-    const host = hosts.find((h) => h.id === terminated.hostId);
+    const host = state.hosts.find((h) => h.id === terminated.hostId);
     if (host) host.isInCall = false;
 
+    await persistState();
     return terminated;
   },
 
   // Packages
-  getPackages: () => [...coinPackages],
+  getPackages: () => [...state.coinPackages],
 
-  addPackage: (pkg: Omit<CoinPackage, 'id'>) => {
+  addPackage: async (pkg: Omit<CoinPackage, 'id'>) => {
     const newPkg: CoinPackage = { ...pkg, id: `pkg_${Date.now()}` };
-    coinPackages.push(newPkg);
+    state.coinPackages.push(newPkg);
+    await persistState();
     return newPkg;
   },
 
-  updatePackage: (id: string, updates: Partial<CoinPackage>) => {
-    const index = coinPackages.findIndex((p) => p.id === id);
+  updatePackage: async (id: string, updates: Partial<CoinPackage>) => {
+    const index = state.coinPackages.findIndex((p) => p.id === id);
     if (index === -1) return null;
-    coinPackages[index] = { ...coinPackages[index], ...updates };
-    return coinPackages[index];
+    state.coinPackages[index] = { ...state.coinPackages[index], ...updates };
+    await persistState();
+    return state.coinPackages[index];
   },
 
-  deletePackage: (id: string) => {
-    coinPackages = coinPackages.filter((p) => p.id !== id);
+  deletePackage: async (id: string) => {
+    state.coinPackages = state.coinPackages.filter((p) => p.id !== id);
+    await persistState();
     return true;
   },
 
   // Gifts
-  getGifts: () => [...gifts],
+  getGifts: () => [...state.gifts],
 
-  addGift: (gift: Omit<Gift, 'id'>) => {
+  addGift: async (gift: Omit<Gift, 'id'>) => {
     const newGift: Gift = { ...gift, id: `gift_${Date.now()}` };
-    gifts.push(newGift);
+    state.gifts.push(newGift);
+    await persistState();
     return newGift;
   },
 
-  updateGift: (id: string, updates: Partial<Gift>) => {
-    const index = gifts.findIndex((g) => g.id === id);
+  updateGift: async (id: string, updates: Partial<Gift>) => {
+    const index = state.gifts.findIndex((g) => g.id === id);
     if (index === -1) return null;
-    gifts[index] = { ...gifts[index], ...updates };
-    return gifts[index];
+    state.gifts[index] = { ...state.gifts[index], ...updates };
+    await persistState();
+    return state.gifts[index];
   },
 
-  deleteGift: (id: string) => {
-    gifts = gifts.filter((g) => g.id !== id);
+  deleteGift: async (id: string) => {
+    state.gifts = state.gifts.filter((g) => g.id !== id);
+    await persistState();
     return true;
   },
 
   // Config
-  getConfig: () => ({ ...appConfig }),
+  getConfig: () => ({ ...state.appConfig }),
 
-  updateConfig: (updates: Partial<AppConfig>) => {
-    appConfig = { ...appConfig, ...updates };
-    return appConfig;
+  updateConfig: async (updates: Partial<AppConfig>) => {
+    state.appConfig = { ...state.appConfig, ...updates };
+    await persistState();
+    return state.appConfig;
   },
 
   // Analytics Metrics
   getAnalytics: () => {
-    const totalRevenue = users.reduce((acc, u) => acc + u.totalSpentInr, 0) + 48250;
-    const coinsInCirculation = users.reduce((acc, u) => acc + u.coinBalance, 0);
-    const totalCallsCount = hosts.reduce((acc, h) => acc + h.totalCalls, 0);
-    const activeCallsCount = activeCalls.length;
-    const onlineHostsCount = hosts.filter((h) => h.isOnline && !h.isBanned).length;
-    const totalUsersCount = users.length + 1420;
+    const totalRevenue = state.users.reduce((acc, u) => acc + u.totalSpentInr, 0) + 48250;
+    const coinsInCirculation = state.users.reduce((acc, u) => acc + u.coinBalance, 0);
+    const totalCallsCount = state.hosts.reduce((acc, h) => acc + h.totalCalls, 0);
+    const activeCallsCount = state.activeCalls.length;
+    const onlineHostsCount = state.hosts.filter((h) => h.isOnline && !h.isBanned).length;
+    const totalUsersCount = state.users.length + 1420;
 
     return {
       totalRevenue,

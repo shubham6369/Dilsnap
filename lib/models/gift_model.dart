@@ -13,6 +13,17 @@ class GiftModel {
     this.isGif = false,
   });
 
+  factory GiftModel.fromJson(Map<String, dynamic> json) {
+    final path = json['assetPath'] as String? ?? 'assets/gif/like.gif';
+    return GiftModel(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      coinCost: json['coinCost'] as int? ?? 10,
+      assetPath: path,
+      isGif: path.endsWith('.gif'),
+    );
+  }
+
   static List<GiftModel> defaultGifts = const [
     GiftModel(
       id: 'gift_like',

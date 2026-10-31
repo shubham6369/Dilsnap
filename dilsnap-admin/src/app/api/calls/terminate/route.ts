@@ -8,13 +8,14 @@ export async function OPTIONS() {
 
 export async function POST(request: NextRequest) {
   try {
+    await store.ensureInitialized();
     const body = await request.json();
     const { callId } = body;
     if (!callId) {
       return jsonResponse({ success: false, error: 'callId is required' }, 400);
     }
 
-    const terminated = store.terminateCall(callId);
+    const terminated = await store.terminateCall(callId);
     if (!terminated) {
       return jsonResponse({ success: false, error: 'Active call not found' }, 404);
     }

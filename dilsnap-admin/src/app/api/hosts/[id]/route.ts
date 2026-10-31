@@ -10,6 +10,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  await store.ensureInitialized();
   const { id } = await context.params;
   const host = store.getHostById(id);
   if (!host) {
@@ -23,9 +24,10 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    await store.ensureInitialized();
     const { id } = await context.params;
     const body = await request.json();
-    const updated = store.updateHost(id, body);
+    const updated = await store.updateHost(id, body);
     if (!updated) {
       return jsonResponse({ success: false, error: 'Host not found' }, 404);
     }
@@ -39,8 +41,9 @@ export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  await store.ensureInitialized();
   const { id } = await context.params;
-  const deleted = store.deleteHost(id);
+  const deleted = await store.deleteHost(id);
   if (!deleted) {
     return jsonResponse({ success: false, error: 'Host not found' }, 404);
   }

@@ -7,6 +7,7 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
+  await store.ensureInitialized();
   const { searchParams } = new URL(request.url);
   const gender = searchParams.get('gender') || undefined;
   const onlineOnly = searchParams.get('online') === 'true';
@@ -17,12 +18,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await store.ensureInitialized();
     const body = await request.json();
     if (!body.name || !body.avatarUrl) {
       return jsonResponse({ success: false, error: 'Name and avatarUrl are required' }, 400);
     }
 
-    const host = store.addHost({
+    const host = await store.addHost({
       name: body.name,
       age: Number(body.age) || 22,
       gender: body.gender || 'Female',

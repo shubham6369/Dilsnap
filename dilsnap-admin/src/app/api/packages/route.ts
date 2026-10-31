@@ -7,17 +7,19 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
+  await store.ensureInitialized();
   const packages = store.getPackages();
   return jsonResponse({ success: true, count: packages.length, data: packages });
 }
 
 export async function POST(request: NextRequest) {
   try {
+    await store.ensureInitialized();
     const body = await request.json();
     if (!body.name || !body.coins || !body.priceInr) {
       return jsonResponse({ success: false, error: 'name, coins, and priceInr are required' }, 400);
     }
-    const pkg = store.addPackage({
+    const pkg = await store.addPackage({
       name: body.name,
       coins: Number(body.coins),
       bonusCoins: Number(body.bonusCoins) || 0,

@@ -2,12 +2,19 @@ import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import '../core/constants/app_constants.dart';
 import '../models/listener_model.dart';
+import '../models/coin_package_model.dart';
+import '../models/gift_model.dart';
 
 class ApiService extends GetxService {
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 3),
-    receiveTimeout: const Duration(seconds: 3),
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+    },
   ));
+
   final List<ListenerModel> _mockListeners = [
     ListenerModel(
       id: 'lst_101',
@@ -101,8 +108,8 @@ class ApiService extends GetxService {
     ),
   ];
 
+  // Fetch verified hosts from live Vercel Admin API
   Future<List<ListenerModel>> fetchListeners({String? gender, bool onlineOnly = false}) async {
-    // Attempt dynamic fetch from Vercel Admin Backend
     try {
       final queryParams = <String, dynamic>{};
       if (gender != null && gender != 'All') queryParams['gender'] = gender;
@@ -119,12 +126,10 @@ class ApiService extends GetxService {
           return raw.map((json) => ListenerModel.fromJson(json)).toList();
         }
       }
-    } catch (_) {
+    } catch (e) {
       // Graceful offline fallback
     }
 
-    // High quality offline fallback
-    await Future.delayed(const Duration(milliseconds: 200));
     var result = List<ListenerModel>.from(_mockListeners);
     if (gender != null && gender.isNotEmpty && gender != 'All') {
       result = result.where((l) => l.gender.toLowerCase() == gender.toLowerCase()).toList();
@@ -135,11 +140,57 @@ class ApiService extends GetxService {
     return result;
   }
 
+  // Fetch active coin packages from live Vercel Admin API
+  Future<List<CoinPackageModel>> fetchPackages() async {
+    try {
+      final response = await _dio.get('${AppConstants.adminApiUrl}/api/packages');
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List raw = response.data['data'] ?? [];
+        if (raw.isNotEmpty) {
+          return raw.map((json) => CoinPackageModel.fromJson(json)).toList();
+        }
+      }
+    } catch (_) {
+      // Fallback to default packages
+    }
+    return CoinPackageModel.defaultPackages;
+  }
+
+  // Fetch virtual gifts catalog from live Vercel Admin API
+  Future<List<GiftModel>> fetchGifts() async {
+    try {
+      final response = await _dio.get('${AppConstants.adminApiUrl}/api/gifts');
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List raw = response.data['data'] ?? [];
+        if (raw.isNotEmpty) {
+          return raw.map((json) => GiftModel.fromJson(json)).toList();
+        }
+      }
+    } catch (_) {
+      // Fallback to default gifts
+    }
+    return GiftModel.defaultGifts;
+  }
+
+  // Fetch global config & announcements from live Vercel Admin API
+  Future<Map<String, dynamic>?> fetchAppConfig() async {
+    try {
+      final response = await _dio.get('${AppConstants.adminApiUrl}/api/config');
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return response.data['data'] as Map<String, dynamic>?;
+      }
+    } catch (_) {
+      // Silent catch
+    }
+    return null;
+  }
+
   Future<ListenerModel?> findRandomMatch() async {
-    await Future.delayed(const Duration(seconds: 2));
-    final online = _mockListeners.where((l) => l.isOnline && !l.isInCall).toList();
-    if (online.isEmpty) return null;
-    online.shuffle();
-    return online.first;
+    await Future.delayed(const Duration(seconds: 1));
+    final currentHosts = await fetchListeners(onlineOnly: true);
+    final available = currentHosts.where((l) => !l.isInCall).toList();
+    if (available.isEmpty) return null;
+    available.shuffle();
+    return available.first;
   }
 }

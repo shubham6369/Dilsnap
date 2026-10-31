@@ -7,14 +7,16 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
+  await store.ensureInitialized();
   const config = store.getConfig();
   return jsonResponse({ success: true, data: config });
 }
 
-export async function POST(request: NextRequest) {
+export async function PATCH(request: NextRequest) {
   try {
+    await store.ensureInitialized();
     const body = await request.json();
-    const updated = store.updateConfig(body);
+    const updated = await store.updateConfig(body);
     return jsonResponse({ success: true, message: 'Configuration updated', data: updated });
   } catch {
     return jsonResponse({ success: false, error: 'Invalid JSON' }, 400);

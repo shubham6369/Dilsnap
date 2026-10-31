@@ -9,11 +9,15 @@ class WalletView extends GetView<WalletController> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return RefreshIndicator(
+      onRefresh: () async => controller.refreshBalance(),
+      color: AppColors.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Balance Card
           Container(
             width: double.infinity,
@@ -88,21 +92,24 @@ class WalletView extends GetView<WalletController> {
           const SizedBox(height: 16),
 
           // Packages Grid
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: CoinPackageModel.defaultPackages.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.88,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-            ),
-            itemBuilder: (context, index) {
-              final pkg = CoinPackageModel.defaultPackages[index];
-              return _buildPackageCard(pkg);
-            },
-          ),
+          Obx(() {
+            final pkgList = controller.packages.isNotEmpty ? controller.packages : CoinPackageModel.defaultPackages;
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: pkgList.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.88,
+                crossAxisSpacing: 14,
+                mainAxisSpacing: 14,
+              ),
+              itemBuilder: (context, index) {
+                final pkg = pkgList[index];
+                return _buildPackageCard(pkg);
+              },
+            );
+          }),
 
           const SizedBox(height: 24),
 
@@ -147,8 +154,9 @@ class WalletView extends GetView<WalletController> {
           const SizedBox(height: 20),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildPackageCard(CoinPackageModel pkg) {
     return GestureDetector(

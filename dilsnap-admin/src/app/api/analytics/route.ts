@@ -6,6 +6,7 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
+  await store.ensureInitialized();
   const analytics = store.getAnalytics();
   return jsonResponse({ success: true, data: analytics });
 }

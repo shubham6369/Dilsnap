@@ -15,10 +15,26 @@ class HomeController extends GetxController {
   final RxBool isLoading = true.obs;
   final RxBool isMatching = false.obs;
 
+  // Dynamic live announcements from Admin Panel
+  final RxBool announcementActive = false.obs;
+  final RxString announcementTitle = ''.obs;
+  final RxString announcementMessage = ''.obs;
+
   @override
   void onInit() {
     super.onInit();
     loadListeners();
+    checkAppConfig();
+  }
+
+  Future<void> checkAppConfig() async {
+    final cfg = await _apiService.fetchAppConfig();
+    if (cfg != null && cfg['broadcastNotice'] != null) {
+      final notice = cfg['broadcastNotice'];
+      announcementActive.value = notice['active'] == true;
+      announcementTitle.value = notice['title'] ?? '';
+      announcementMessage.value = notice['message'] ?? '';
+    }
   }
 
   void changeTab(int index) {
@@ -38,6 +54,7 @@ class HomeController extends GetxController {
   Future<void> loadListeners() async {
     isLoading.value = true;
     try {
+      checkAppConfig();
       final list = await _apiService.fetchListeners(
         gender: selectedGenderFilter.value,
         onlineOnly: onlineOnly.value,

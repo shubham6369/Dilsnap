@@ -7,20 +7,22 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
+  await store.ensureInitialized();
   const gifts = store.getGifts();
   return jsonResponse({ success: true, count: gifts.length, data: gifts });
 }
 
 export async function POST(request: NextRequest) {
   try {
+    await store.ensureInitialized();
     const body = await request.json();
-    if (!body.name || !body.coinCost) {
-      return jsonResponse({ success: false, error: 'name and coinCost are required' }, 400);
+    if (!body.name || !body.coinCost || !body.assetPath) {
+      return jsonResponse({ success: false, error: 'name, coinCost, and assetPath are required' }, 400);
     }
-    const gift = store.addGift({
+    const gift = await store.addGift({
       name: body.name,
       coinCost: Number(body.coinCost),
-      assetPath: body.assetPath || 'assets/image/diamond.png',
+      assetPath: body.assetPath,
       category: body.category || 'Popular',
     });
     return jsonResponse({ success: true, message: 'Gift added', data: gift }, 201);

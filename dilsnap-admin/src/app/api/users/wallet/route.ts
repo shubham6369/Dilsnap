@@ -8,6 +8,7 @@ export async function OPTIONS() {
 
 export async function POST(request: NextRequest) {
   try {
+    await store.ensureInitialized();
     const body = await request.json();
     const { userId, amount, action, reason } = body;
 
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     const delta = action === 'deduct' ? -Math.abs(Number(amount)) : Math.abs(Number(amount));
-    const updated = store.adjustUserCoins(userId, delta);
+    const updated = await store.adjustUserCoins(userId, delta);
 
     if (!updated) {
       return jsonResponse({ success: false, error: 'User not found' }, 404);

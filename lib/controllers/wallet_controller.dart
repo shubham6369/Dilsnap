@@ -1,22 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../models/coin_package_model.dart';
+import '../services/api_service.dart';
 import '../services/storage_service.dart';
 
 class WalletController extends GetxController {
   final StorageService _storage = Get.find<StorageService>();
+  final ApiService _apiService = Get.find<ApiService>();
 
   final RxInt coinBalance = 120.obs;
   final RxBool isPurchasing = false.obs;
+  final RxList<CoinPackageModel> packages = <CoinPackageModel>[].obs;
+  final RxBool isLoadingPackages = true.obs;
 
   @override
   void onInit() {
     super.onInit();
     coinBalance.value = _storage.userCoins;
+    loadPackages();
+  }
+
+  Future<void> loadPackages() async {
+    isLoadingPackages.value = true;
+    try {
+      final list = await _apiService.fetchPackages();
+      packages.assignAll(list);
+    } finally {
+      isLoadingPackages.value = false;
+    }
   }
 
   void refreshBalance() {
     coinBalance.value = _storage.userCoins;
+    loadPackages();
   }
 
   bool deductCoins(int amount) {

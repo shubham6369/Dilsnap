@@ -6,6 +6,7 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
+  await store.ensureInitialized();
   const active = store.getActiveCalls();
   const history = store.getCallHistory();
   return jsonResponse({
