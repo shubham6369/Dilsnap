@@ -10,6 +10,8 @@ class AppConstants {
   static const String keyUserCoins = 'user_coins';
   static const String keyIsHost = 'is_host';
   static const String keyHostRate = 'host_coin_rate';
+  static const String keyUserId = 'user_id';
+  static const String keyAuthToken = 'auth_token';
 
   // Default values
   static const int defaultInitialCoins = 120; // Free welcome bonus

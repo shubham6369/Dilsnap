@@ -5,6 +5,8 @@ import '../core/constants/app_colors.dart';
 import '../models/gift_model.dart';
 import '../models/listener_model.dart';
 import '../services/webrtc_service.dart';
+import '../services/storage_service.dart';
+import '../services/api_service.dart';
 import 'wallet_controller.dart';
 
 enum CallState { connecting, ringing, connected, ended }
@@ -13,8 +15,11 @@ enum CallType { video, audio }
 class CallController extends GetxController {
   final WebRTCService webrtcService = Get.find<WebRTCService>();
   final WalletController walletController = Get.find<WalletController>();
+  final StorageService _storage = Get.find<StorageService>();
+  final ApiService _apiService = Get.find<ApiService>();
 
   ListenerModel? currentHost;
+  String? currentSessionId;
   final Rx<CallType> callType = CallType.video.obs;
   final Rx<CallState> callState = CallState.connecting.obs;
   final RxInt callDurationSeconds = 0.obs;
@@ -75,6 +80,31 @@ class CallController extends GetxController {
     inCallComments.clear();
     floatingDeductionText.value = '';
 
+    // Start live backend call session
+    final userIdentifier = _storage.userId.isNotEmpty ? _storage.userId : _storage.userPhone;
+    if (userIdentifier.isNotEmpty) {
+      final res = await _apiService.startCallSession(
+        userId: userIdentifier,
+        hostId: host.id,
+        callType: type == CallType.video ? 'video' : 'audio',
+      );
+      if (res != null) {
+        if (res['success'] == false) {
+          callState.value = CallState.ended;
+          Get.snackbar(
+            'Cannot Connect',
+            res['error']?.toString() ?? 'Unable to initiate call session',
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
+          );
+          return;
+        }
+        if (res['data'] is Map) {
+          currentSessionId = res['data']['sessionId']?.toString();
+        }
+      }
+    }
+
     if (type == CallType.video) {
       Get.toNamed('/video-call');
       await webrtcService.startLocalStream();
@@ -130,30 +160,68 @@ class CallController extends GetxController {
   void _burnCoins(int rate) {
     if (currentHost == null) return;
 
-    if (walletController.coinBalance.value >= rate) {
-      walletController.deductCoins(rate);
-      remainingCoins.value = walletController.coinBalance.value;
+    if (currentSessionId != null && currentSessionId!.isNotEmpty) {
+      // Backend live session: pulse route atomically debits host rate and maintains session ledger
+      _apiService.pulseCallSession(currentSessionId!).then((pulseRes) {
+        if (pulseRes != null) {
+          if (pulseRes['success'] == true && pulseRes['data'] is Map) {
+            final newBal = pulseRes['data']['remainingCoins'];
+            if (newBal is int) {
+              walletController.coinBalance.value = newBal;
+              _storage.userCoins = newBal;
+              remainingCoins.value = newBal;
+            } else if (walletController.coinBalance.value >= rate) {
+              walletController.coinBalance.value -= rate;
+              _storage.userCoins = walletController.coinBalance.value;
+              remainingCoins.value = walletController.coinBalance.value;
+            }
+          } else {
+            // Pulse failed on server (e.g. 402 insufficient coins or 400 ended session)
+            endCall(reason: pulseRes['error']?.toString() ?? 'Call ended: Out of coins. Recharge to keep talking!');
+            return;
+          }
+        } else {
+          // Network dropped / offline fallback: debit locally
+          if (walletController.coinBalance.value >= rate) {
+            walletController.deductCoins(rate, reason: 'Live call rate (${callType.value == CallType.video ? 'video' : 'audio'})');
+            remainingCoins.value = walletController.coinBalance.value;
+          } else {
+            endCall(reason: 'Call ended: Out of coins. Recharge to keep talking!');
+            return;
+          }
+        }
 
-      // Trigger floating deduction popup
-      floatingDeductionText.value = '-$rate 💎 Coins';
-      Timer(const Duration(milliseconds: 2200), () {
-        floatingDeductionText.value = '';
+        _notifyDeduction(rate);
       });
-
-      // Low balance warning when coins are low
-      if (remainingCoins.value < rate) {
-        Get.snackbar(
-          'Low Coin Balance ⚠️',
-          'Only ${remainingCoins.value} coins remaining! Call will end shortly.',
-          backgroundColor: Colors.orangeAccent,
-          colorText: Colors.black,
-          duration: const Duration(seconds: 4),
-          snackPosition: SnackPosition.TOP,
-        );
-      }
     } else {
-      // Out of coins - gracefully end call
-      endCall(reason: 'Call ended: Out of coins. Recharge to keep talking!');
+      // Offline / mock session without live backend session
+      if (walletController.coinBalance.value >= rate) {
+        walletController.deductCoins(rate, reason: 'Live call rate (${callType.value == CallType.video ? 'video' : 'audio'})');
+        remainingCoins.value = walletController.coinBalance.value;
+        _notifyDeduction(rate);
+      } else {
+        endCall(reason: 'Call ended: Out of coins. Recharge to keep talking!');
+      }
+    }
+  }
+
+  void _notifyDeduction(int rate) {
+    // Trigger floating deduction popup
+    floatingDeductionText.value = '-$rate 💎 Coins';
+    Timer(const Duration(milliseconds: 2200), () {
+      floatingDeductionText.value = '';
+    });
+
+    // Low balance warning when coins are low
+    if (remainingCoins.value < rate) {
+      Get.snackbar(
+        'Low Coin Balance ⚠️',
+        'Only ${remainingCoins.value} coins remaining! Call will end shortly.',
+        backgroundColor: Colors.orangeAccent,
+        colorText: Colors.black,
+        duration: const Duration(seconds: 4),
+        snackPosition: SnackPosition.TOP,
+      );
     }
   }
 
@@ -168,7 +236,7 @@ class CallController extends GetxController {
       return;
     }
 
-    walletController.deductCoins(gift.coinCost);
+    walletController.deductCoins(gift.coinCost, reason: 'Gift: ${gift.name}');
     remainingCoins.value = walletController.coinBalance.value;
 
     // Trigger visual floating gift overlay
@@ -224,6 +292,17 @@ class CallController extends GetxController {
     _callDurationTimer?.cancel();
     _coinDeductionTimer?.cancel();
     _commentTimer?.cancel();
+
+    // End backend call session
+    final sessId = currentSessionId;
+    currentSessionId = null;
+    if (sessId != null && sessId.isNotEmpty) {
+      _apiService.endCallSession(
+        sessId,
+        durationSeconds: callDurationSeconds.value,
+      );
+    }
+
     await webrtcService.disposeCall();
     callState.value = CallState.ended;
 

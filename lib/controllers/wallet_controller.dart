@@ -18,6 +18,18 @@ class WalletController extends GetxController {
     super.onInit();
     coinBalance.value = _storage.userCoins;
     loadPackages();
+    fetchBalanceFromBackend();
+  }
+
+  Future<void> fetchBalanceFromBackend() async {
+    final userIdentifier = _storage.userId.isNotEmpty ? _storage.userId : _storage.userPhone;
+    if (userIdentifier.isEmpty) return;
+
+    final remoteBalance = await _apiService.fetchWalletBalance(userIdentifier);
+    if (remoteBalance != null) {
+      coinBalance.value = remoteBalance;
+      _storage.userCoins = remoteBalance;
+    }
   }
 
   Future<void> loadPackages() async {
@@ -31,28 +43,74 @@ class WalletController extends GetxController {
   }
 
   void refreshBalance() {
-    coinBalance.value = _storage.userCoins;
+    fetchBalanceFromBackend();
     loadPackages();
   }
 
-  bool deductCoins(int amount) {
+  bool deductCoins(int amount, {String reason = 'Wallet deduction'}) {
     if (coinBalance.value >= amount) {
       coinBalance.value -= amount;
       _storage.userCoins = coinBalance.value;
+
+      final userIdentifier = _storage.userId.isNotEmpty ? _storage.userId : _storage.userPhone;
+      if (userIdentifier.isNotEmpty) {
+        _apiService.deductWalletCoins(
+          userId: userIdentifier,
+          amount: amount,
+          reason: reason,
+        ).then((res) {
+          if (res != null && res['data'] is Map) {
+            final serverBal = res['data']['newBalance'];
+            if (serverBal is int) {
+              coinBalance.value = serverBal;
+              _storage.userCoins = serverBal;
+            }
+          }
+        });
+      }
       return true;
     }
     return false;
   }
 
-  void addCoins(int amount) {
+  void addCoins(int amount, {String reason = 'Wallet coin recharge'}) {
     coinBalance.value += amount;
     _storage.userCoins = coinBalance.value;
+
+    final userIdentifier = _storage.userId.isNotEmpty ? _storage.userId : _storage.userPhone;
+    if (userIdentifier.isNotEmpty) {
+      _apiService.creditWalletCoins(
+        userId: userIdentifier,
+        amount: amount,
+        reason: reason,
+      ).then((res) {
+        if (res != null && res['data'] is Map) {
+          final serverBal = res['data']['newBalance'];
+          if (serverBal is int) {
+            coinBalance.value = serverBal;
+            _storage.userCoins = serverBal;
+          }
+        }
+      });
+    }
   }
 
-  void purchasePackage(CoinPackageModel package) {
+  void purchasePackage(CoinPackageModel package) async {
     isPurchasing.value = true;
+    final userIdentifier = _storage.userId.isNotEmpty ? _storage.userId : _storage.userPhone;
 
-    // Simulate Cashfree Seamless Payment SDK flow
+    String? orderId;
+    if (userIdentifier.isNotEmpty) {
+      final orderRes = await _apiService.createPaymentOrder(
+        userId: userIdentifier,
+        packageId: package.id,
+      );
+      if (orderRes != null && orderRes['data'] is Map) {
+        orderId = orderRes['data']['orderId']?.toString();
+      }
+    }
+
+    // Cashfree Seamless Payment checkout bottomsheet
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(24),
@@ -88,7 +146,7 @@ class WalletController extends GetxController {
                 ),
                 onPressed: () {
                   Get.back();
-                  _processPaymentSuccess(package);
+                  _processPaymentSuccess(package, orderId: orderId);
                 },
                 child: const Text('Pay via UPI / GPay / PhonePe', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
@@ -100,19 +158,34 @@ class WalletController extends GetxController {
     );
   }
 
-  void _processPaymentSuccess(CoinPackageModel package) {
-    Future.delayed(const Duration(milliseconds: 500), () {
-      isPurchasing.value = false;
-      final totalAdded = package.coins + package.bonusCoins;
-      addCoins(totalAdded);
-      Get.snackbar(
-        'Payment Successful! 🎉',
-        'Added $totalAdded coins to your DilSnap wallet',
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.TOP,
-        duration: const Duration(seconds: 4),
-      );
-    });
+  void _processPaymentSuccess(CoinPackageModel package, {String? orderId}) async {
+    final totalAdded = package.coins + package.bonusCoins;
+
+    if (orderId != null && orderId.isNotEmpty) {
+      final verifyRes = await _apiService.verifyPaymentOrder(orderId: orderId);
+      if (verifyRes != null && verifyRes['data'] is Map) {
+        final newBal = verifyRes['data']['newBalance'];
+        if (newBal is int) {
+          coinBalance.value = newBal;
+          _storage.userCoins = newBal;
+        } else {
+          addCoins(totalAdded, reason: 'Purchased ${package.name}');
+        }
+      } else {
+        addCoins(totalAdded, reason: 'Purchased ${package.name}');
+      }
+    } else {
+      addCoins(totalAdded, reason: 'Purchased ${package.name}');
+    }
+
+    isPurchasing.value = false;
+    Get.snackbar(
+      'Payment Successful! 🎉',
+      'Added $totalAdded coins to your DilSnap wallet',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+      snackPosition: SnackPosition.TOP,
+      duration: const Duration(seconds: 4),
+    );
   }
 }

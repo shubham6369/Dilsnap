@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx tsx --tsconfig ./tsconfig.json ./test/backend.test.mjs && npx tsx --tsconfig ./tsconfig.json ./test/routes.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",

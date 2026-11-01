@@ -11,6 +11,7 @@ class ApiService extends GetxService {
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
+    validateStatus: (status) => status != null && status < 500,
     headers: {
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
@@ -267,5 +268,260 @@ class ApiService extends GetxService {
     if (available.isEmpty) return null;
     available.shuffle();
     return available.first;
+  }
+
+  // Auth: Send OTP via live backend
+  Future<Map<String, dynamic>?> sendOtp(String phone) async {
+    try {
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/auth/send-otp',
+        data: {'phone': phone},
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.sendOtp failed: $e');
+    }
+    return null;
+  }
+
+  // Auth: Verify OTP via live backend
+  Future<Map<String, dynamic>?> verifyOtp(String phone, String otp) async {
+    try {
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/auth/verify-otp',
+        data: {'phone': phone, 'otp': otp},
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.verifyOtp failed: $e');
+    }
+    return null;
+  }
+
+  // User Profile: Fetch
+  Future<Map<String, dynamic>?> fetchUserProfile({String? userId, String? phone}) async {
+    try {
+      final queryParams = <String, dynamic>{
+        '_t': DateTime.now().millisecondsSinceEpoch,
+      };
+      if (userId != null && userId.isNotEmpty) queryParams['userId'] = userId;
+      if (phone != null && phone.isNotEmpty) queryParams['phone'] = phone;
+
+      final response = await _dio.get(
+        '${AppConstants.adminApiUrl}/api/user/profile',
+        queryParameters: queryParams,
+      );
+      final map = _extractMap(response.data);
+      if (response.statusCode == 200 && map != null && map['success'] == true) {
+        final dynamic raw = map['data'];
+        if (raw is Map) return Map<String, dynamic>.from(raw);
+      }
+    } catch (e) {
+      debugPrint('DilSnap ApiService.fetchUserProfile failed: $e');
+    }
+    return null;
+  }
+
+  // User Profile: Update
+  Future<Map<String, dynamic>?> updateUserProfile({
+    required String userId,
+    String? name,
+    String? gender,
+    String? avatarUrl,
+  }) async {
+    try {
+      final payload = <String, dynamic>{'userId': userId};
+      if (name != null) payload['name'] = name;
+      if (gender != null) payload['gender'] = gender;
+      if (avatarUrl != null) payload['avatarUrl'] = avatarUrl;
+
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/user/profile',
+        data: payload,
+      );
+      final map = _extractMap(response.data);
+      if (response.statusCode == 200 && map != null && map['success'] == true) {
+        final dynamic raw = map['data'];
+        if (raw is Map) return Map<String, dynamic>.from(raw);
+      }
+    } catch (e) {
+      debugPrint('DilSnap ApiService.updateUserProfile failed: $e');
+    }
+    return null;
+  }
+
+  // Wallet: Fetch Balance
+  Future<int?> fetchWalletBalance(String userIdOrPhone) async {
+    try {
+      final response = await _dio.get(
+        '${AppConstants.adminApiUrl}/api/wallet/balance',
+        queryParameters: {
+          'userId': userIdOrPhone,
+          '_t': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
+      final map = _extractMap(response.data);
+      if (response.statusCode == 200 && map != null && map['success'] == true) {
+        final dynamic raw = map['data'];
+        if (raw is Map) {
+          final coins = raw['coins'] ?? raw['coinBalance'];
+          if (coins is int) return coins;
+          if (coins is num) return coins.toInt();
+        }
+      }
+    } catch (e) {
+      debugPrint('DilSnap ApiService.fetchWalletBalance failed: $e');
+    }
+    return null;
+  }
+
+  // Wallet: Deduct Coins
+  Future<Map<String, dynamic>?> deductWalletCoins({
+    required String userId,
+    required int amount,
+    required String reason,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/wallet/deduct',
+        data: {
+          'userId': userId,
+          'amount': amount,
+          'reason': reason,
+        },
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.deductWalletCoins failed: $e');
+    }
+    return null;
+  }
+
+  // Wallet: Credit Coins
+  Future<Map<String, dynamic>?> creditWalletCoins({
+    required String userId,
+    required int amount,
+    required String reason,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/wallet/credit',
+        data: {
+          'userId': userId,
+          'amount': amount,
+          'reason': reason,
+        },
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.creditWalletCoins failed: $e');
+    }
+    return null;
+  }
+
+  // Calls: Start Session
+  Future<Map<String, dynamic>?> startCallSession({
+    required String userId,
+    required String hostId,
+    required String callType,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/calls/start',
+        data: {
+          'userId': userId,
+          'hostId': hostId,
+          'callType': callType,
+        },
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.startCallSession failed: $e');
+    }
+    return null;
+  }
+
+  // Calls: Pulse Session
+  Future<Map<String, dynamic>?> pulseCallSession(String sessionId) async {
+    try {
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/calls/pulse',
+        data: {'sessionId': sessionId},
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.pulseCallSession failed: $e');
+    }
+    return null;
+  }
+
+  // Calls: End Session
+  Future<Map<String, dynamic>?> endCallSession(String sessionId, {int? durationSeconds, int? coinsDeducted}) async {
+    try {
+      final payload = <String, dynamic>{'sessionId': sessionId};
+      if (durationSeconds != null) payload['durationSeconds'] = durationSeconds;
+      if (coinsDeducted != null) payload['coinsDeducted'] = coinsDeducted;
+
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/calls/end',
+        data: payload,
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.endCallSession failed: $e');
+    }
+    return null;
+  }
+
+  // Payments: Create Order
+  Future<Map<String, dynamic>?> createPaymentOrder({
+    required String userId,
+    required String packageId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/payments/create-order',
+        data: {
+          'userId': userId,
+          'packageId': packageId,
+        },
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.createPaymentOrder failed: $e');
+    }
+    return null;
+  }
+
+  // Payments: Verify Webhook
+  Future<Map<String, dynamic>?> verifyPaymentOrder({
+    required String orderId,
+    String? paymentSessionId,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        'orderId': orderId,
+        'status': 'PAID',
+      };
+      if (paymentSessionId != null) payload['paymentSessionId'] = paymentSessionId;
+
+      final response = await _dio.post(
+        '${AppConstants.adminApiUrl}/api/payments/webhook',
+        data: payload,
+      );
+      final map = _extractMap(response.data);
+      if (map != null) return map;
+    } catch (e) {
+      debugPrint('DilSnap ApiService.verifyPaymentOrder failed: $e');
+    }
+    return null;
   }
 }

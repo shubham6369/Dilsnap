@@ -19,14 +19,55 @@ export interface Host {
 export interface User {
   id: string;
   name: string;
+  phone: string;
   mobile: string;
   gender: string;
   avatarUrl: string;
+  coins: number;
   coinBalance: number;
   totalCalls: number;
   totalSpentInr: number;
   isBanned: boolean;
+  createdAt: string;
   joinedDate: string;
+  token?: string;
+}
+
+export interface WalletTransaction {
+  id: string;
+  userId: string;
+  type: 'credit' | 'debit';
+  amount: number;
+  description: string;
+  timestamp: string;
+}
+
+export interface CallSession {
+  id: string;
+  userId: string;
+  userName?: string;
+  hostId: string;
+  hostName?: string;
+  hostAvatar?: string;
+  callType: 'video' | 'audio';
+  startTime: string;
+  endTime?: string;
+  durationSeconds: number;
+  coinsDeducted: number;
+  ratePerMinute: number;
+  status: 'active' | 'completed' | 'terminated_by_admin' | 'insufficient_coins';
+}
+
+export interface PaymentOrder {
+  id: string;
+  orderId: string;
+  userId: string;
+  packageId: string;
+  amountInr: number;
+  coins: number;
+  status: 'created' | 'paid' | 'failed';
+  createdAt: string;
+  paymentSessionId?: string;
 }
 
 export interface ActiveCall {
@@ -38,10 +79,13 @@ export interface ActiveCall {
   userName: string;
   callType: 'video' | 'audio';
   startedAt: string;
+  startTime?: string;
+  endTime?: string;
   durationSeconds: number;
   coinsBurned: number;
+  coinsDeducted?: number;
   ratePerMinute: number;
-  status: 'active' | 'completed' | 'terminated_by_admin';
+  status: 'active' | 'completed' | 'terminated_by_admin' | 'insufficient_coins';
 }
 
 export interface CoinPackage {
