@@ -338,9 +338,9 @@ class _ChatDetailViewState extends State<ChatDetailView> {
                   crossAxisSpacing: 12,
                   childAspectRatio: 0.85,
                 ),
-                itemCount: GiftModel.defaultGifts.length,
+                itemCount: GiftModel.activeGifts.length,
                 itemBuilder: (ctx, idx) {
-                  final gift = GiftModel.defaultGifts[idx];
+                  final gift = GiftModel.activeGifts[idx];
                   return GestureDetector(
                     onTap: () {
                       Navigator.pop(ctx);

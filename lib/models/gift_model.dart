@@ -24,7 +24,7 @@ class GiftModel {
     );
   }
 
-  static List<GiftModel> defaultGifts = const [
+  static const List<GiftModel> defaultGifts = [
     GiftModel(
       id: 'gift_like',
       name: 'Thumbs Up',
@@ -61,4 +61,6 @@ class GiftModel {
       isGif: false,
     ),
   ];
+
+  static List<GiftModel> activeGifts = List<GiftModel>.from(defaultGifts);
 }

@@ -163,13 +163,15 @@ class ApiService extends GetxService {
       if (response.statusCode == 200 && response.data['success'] == true) {
         final List raw = response.data['data'] ?? [];
         if (raw.isNotEmpty) {
-          return raw.map((json) => GiftModel.fromJson(json)).toList();
+          final list = raw.map((json) => GiftModel.fromJson(json)).toList();
+          GiftModel.activeGifts = list;
+          return list;
         }
       }
     } catch (_) {
       // Fallback to default gifts
     }
-    return GiftModel.defaultGifts;
+    return GiftModel.activeGifts;
   }
 
   // Fetch global config & announcements from live Vercel Admin API
