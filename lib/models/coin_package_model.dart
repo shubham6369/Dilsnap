@@ -18,7 +18,33 @@ class CoinPackageModel {
   });
 
   factory CoinPackageModel.fromJson(Map<String, dynamic> json) {
-    final coinAmount = json['coins'] as int? ?? 100;
+    final dynamic rawCoins = json['coins'];
+    int coinAmount = 100;
+    if (rawCoins is num) {
+      coinAmount = rawCoins.toInt();
+    } else if (rawCoins is String) {
+      coinAmount = int.tryParse(rawCoins) ?? 100;
+    }
+
+    final dynamic rawBonus = json['bonusCoins'];
+    int bonusAmount = 0;
+    if (rawBonus is num) {
+      bonusAmount = rawBonus.toInt();
+    } else if (rawBonus is String) {
+      bonusAmount = int.tryParse(rawBonus) ?? 0;
+    }
+
+    final dynamic rawPrice = json['priceInr'];
+    double price = 99.0;
+    if (rawPrice is num) {
+      price = rawPrice.toDouble();
+    } else if (rawPrice is String) {
+      price = double.tryParse(rawPrice) ?? 99.0;
+    }
+
+    final dynamic rawPopular = json['isPopular'];
+    final bool isPop = rawPopular == true || rawPopular == 'true' || rawPopular == 1;
+
     String icon = 'assets/image/emerald.png';
     if (coinAmount >= 1500) {
       icon = 'assets/image/diamond.png';
@@ -29,13 +55,13 @@ class CoinPackageModel {
     }
 
     return CoinPackageModel(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Coins Pack',
       coins: coinAmount,
-      bonusCoins: json['bonusCoins'] as int? ?? 0,
-      priceInr: (json['priceInr'] as num?)?.toDouble() ?? 99.0,
+      bonusCoins: bonusAmount,
+      priceInr: price,
       iconAsset: icon,
-      isPopular: json['isPopular'] as bool? ?? false,
+      isPopular: isPop,
     );
   }
 

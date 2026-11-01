@@ -355,12 +355,29 @@ class HomeView extends GetView<HomeController> {
   }
 
   Widget _buildLiveTab(BuildContext context, CallController callController, ChatController chatController) {
-    return Obx(() {
-      final onlineHosts = controller.listenerList.where((l) => l.isOnline).toList();
-      return ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: onlineHosts.length,
-        itemBuilder: (context, index) {
+    return RefreshIndicator(
+      onRefresh: controller.loadListeners,
+      color: AppColors.primary,
+      child: Obx(() {
+        final onlineHosts = controller.listenerList.where((l) => l.isOnline).toList();
+        if (onlineHosts.isEmpty) {
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [
+              SizedBox(height: 120),
+              Center(
+                child: Text('No verified hosts currently live.\nPull down to refresh.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textMuted)),
+              ),
+            ],
+          );
+        }
+        return ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          itemCount: onlineHosts.length,
+          itemBuilder: (context, index) {
           final host = onlineHosts[index];
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
@@ -431,6 +448,7 @@ class HomeView extends GetView<HomeController> {
           );
         },
       );
-    });
-  }
+    }),
+  );
+}
 }

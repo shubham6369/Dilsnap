@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import '../core/constants/app_constants.dart';
 import '../models/listener_model.dart';
@@ -14,6 +16,24 @@ class ApiService extends GetxService {
       'Pragma': 'no-cache',
     },
   ));
+
+  Map<String, dynamic>? _extractMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    if (data is String && data.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (e) {
+        debugPrint('JSON decode error: $e');
+      }
+    }
+    return null;
+  }
 
   final List<ListenerModel> _mockListeners = [
     ListenerModel(
@@ -111,7 +131,9 @@ class ApiService extends GetxService {
   // Fetch verified hosts from live Vercel Admin API
   Future<List<ListenerModel>> fetchListeners({String? gender, bool onlineOnly = false}) async {
     try {
-      final queryParams = <String, dynamic>{};
+      final queryParams = <String, dynamic>{
+        '_t': DateTime.now().millisecondsSinceEpoch,
+      };
       if (gender != null && gender != 'All') queryParams['gender'] = gender;
       if (onlineOnly) queryParams['online'] = 'true';
 
@@ -120,14 +142,27 @@ class ApiService extends GetxService {
         queryParameters: queryParams,
       );
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final List raw = response.data['data'] ?? [];
-        if (raw.isNotEmpty) {
-          return raw.map((json) => ListenerModel.fromJson(json)).toList();
+      final map = _extractMap(response.data);
+      if (response.statusCode == 200 && map != null && map['success'] == true) {
+        final dynamic rawList = map['data'];
+        if (rawList is List && rawList.isNotEmpty) {
+          final List<ListenerModel> parsed = [];
+          for (final item in rawList) {
+            try {
+              if (item is Map) {
+                parsed.add(ListenerModel.fromJson(Map<String, dynamic>.from(item)));
+              }
+            } catch (itemErr) {
+              debugPrint('Error parsing individual host item: $itemErr');
+            }
+          }
+          if (parsed.isNotEmpty) {
+            return parsed;
+          }
         }
       }
     } catch (e) {
-      // Graceful offline fallback
+      debugPrint('DilSnap ApiService.fetchListeners failed: $e');
     }
 
     var result = List<ListenerModel>.from(_mockListeners);
@@ -143,15 +178,31 @@ class ApiService extends GetxService {
   // Fetch active coin packages from live Vercel Admin API
   Future<List<CoinPackageModel>> fetchPackages() async {
     try {
-      final response = await _dio.get('${AppConstants.adminApiUrl}/api/packages');
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final List raw = response.data['data'] ?? [];
-        if (raw.isNotEmpty) {
-          return raw.map((json) => CoinPackageModel.fromJson(json)).toList();
+      final response = await _dio.get(
+        '${AppConstants.adminApiUrl}/api/packages',
+        queryParameters: {'_t': DateTime.now().millisecondsSinceEpoch},
+      );
+      final map = _extractMap(response.data);
+      if (response.statusCode == 200 && map != null && map['success'] == true) {
+        final dynamic rawList = map['data'];
+        if (rawList is List && rawList.isNotEmpty) {
+          final List<CoinPackageModel> parsed = [];
+          for (final item in rawList) {
+            try {
+              if (item is Map) {
+                parsed.add(CoinPackageModel.fromJson(Map<String, dynamic>.from(item)));
+              }
+            } catch (err) {
+              debugPrint('Error parsing coin package item: $err');
+            }
+          }
+          if (parsed.isNotEmpty) {
+            return parsed;
+          }
         }
       }
-    } catch (_) {
-      // Fallback to default packages
+    } catch (e) {
+      debugPrint('DilSnap ApiService.fetchPackages failed: $e');
     }
     return CoinPackageModel.defaultPackages;
   }
@@ -159,17 +210,32 @@ class ApiService extends GetxService {
   // Fetch virtual gifts catalog from live Vercel Admin API
   Future<List<GiftModel>> fetchGifts() async {
     try {
-      final response = await _dio.get('${AppConstants.adminApiUrl}/api/gifts');
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final List raw = response.data['data'] ?? [];
-        if (raw.isNotEmpty) {
-          final list = raw.map((json) => GiftModel.fromJson(json)).toList();
-          GiftModel.activeGifts = list;
-          return list;
+      final response = await _dio.get(
+        '${AppConstants.adminApiUrl}/api/gifts',
+        queryParameters: {'_t': DateTime.now().millisecondsSinceEpoch},
+      );
+      final map = _extractMap(response.data);
+      if (response.statusCode == 200 && map != null && map['success'] == true) {
+        final dynamic rawList = map['data'];
+        if (rawList is List && rawList.isNotEmpty) {
+          final List<GiftModel> parsed = [];
+          for (final item in rawList) {
+            try {
+              if (item is Map) {
+                parsed.add(GiftModel.fromJson(Map<String, dynamic>.from(item)));
+              }
+            } catch (err) {
+              debugPrint('Error parsing gift item: $err');
+            }
+          }
+          if (parsed.isNotEmpty) {
+            GiftModel.activeGifts = parsed;
+            return parsed;
+          }
         }
       }
-    } catch (_) {
-      // Fallback to default gifts
+    } catch (e) {
+      debugPrint('DilSnap ApiService.fetchGifts failed: $e');
     }
     return GiftModel.activeGifts;
   }
@@ -177,12 +243,19 @@ class ApiService extends GetxService {
   // Fetch global config & announcements from live Vercel Admin API
   Future<Map<String, dynamic>?> fetchAppConfig() async {
     try {
-      final response = await _dio.get('${AppConstants.adminApiUrl}/api/config');
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        return response.data['data'] as Map<String, dynamic>?;
+      final response = await _dio.get(
+        '${AppConstants.adminApiUrl}/api/config',
+        queryParameters: {'_t': DateTime.now().millisecondsSinceEpoch},
+      );
+      final map = _extractMap(response.data);
+      if (response.statusCode == 200 && map != null && map['success'] == true) {
+        final dynamic rawData = map['data'];
+        if (rawData is Map) {
+          return Map<String, dynamic>.from(rawData);
+        }
       }
-    } catch (_) {
-      // Silent catch
+    } catch (e) {
+      debugPrint('DilSnap ApiService.fetchAppConfig failed: $e');
     }
     return null;
   }

@@ -1,9 +1,11 @@
+import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import '../models/listener_model.dart';
 import '../services/api_service.dart';
 import 'call_controller.dart';
 
-class HomeController extends GetxController {
+class HomeController extends GetxController with WidgetsBindingObserver {
   final ApiService _apiService = Get.find<ApiService>();
   final CallController _callController = Get.find<CallController>();
 
@@ -20,11 +22,46 @@ class HomeController extends GetxController {
   final RxString announcementTitle = ''.obs;
   final RxString announcementMessage = ''.obs;
 
+  Timer? _periodicSyncTimer;
+
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
     loadListeners();
     checkAppConfig();
+
+    // Auto-poll live admin updates every 25 seconds
+    _periodicSyncTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      silentSync();
+    });
+  }
+
+  @override
+  void onClose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _periodicSyncTimer?.cancel();
+    super.onClose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      silentSync();
+    }
+  }
+
+  Future<void> silentSync() async {
+    try {
+      checkAppConfig();
+      final list = await _apiService.fetchListeners(
+        gender: selectedGenderFilter.value,
+        onlineOnly: onlineOnly.value,
+      );
+      if (list.isNotEmpty) {
+        listenerList.assignAll(list);
+      }
+    } catch (_) {}
   }
 
   Future<void> checkAppConfig() async {
@@ -39,6 +76,10 @@ class HomeController extends GetxController {
 
   void changeTab(int index) {
     selectedTabIndex.value = index;
+    // Auto-sync data when user clicks tabs
+    if (index == 0 || index == 1) {
+      silentSync();
+    }
   }
 
   void setGenderFilter(String gender) {

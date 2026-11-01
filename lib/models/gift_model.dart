@@ -14,11 +14,19 @@ class GiftModel {
   });
 
   factory GiftModel.fromJson(Map<String, dynamic> json) {
-    final path = json['assetPath'] as String? ?? 'assets/gif/like.gif';
+    final path = json['assetPath']?.toString() ?? 'assets/gif/like.gif';
+    final dynamic rawCost = json['coinCost'];
+    int cost = 10;
+    if (rawCost is num) {
+      cost = rawCost.toInt();
+    } else if (rawCost is String) {
+      cost = int.tryParse(rawCost) ?? 10;
+    }
+
     return GiftModel(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      coinCost: json['coinCost'] as int? ?? 10,
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      coinCost: cost,
       assetPath: path,
       isGif: path.endsWith('.gif'),
     );
