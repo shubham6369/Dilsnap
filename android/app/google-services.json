@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "151933851152",
+    "project_id": "dilsnap-a72fb",
+    "storage_bucket": "dilsnap-a72fb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151933851152:android:1f4ec706720c5973c99c95",
+        "android_client_info": {
+          "package_name": "Dilsnap.com"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3OsUl81lyPth03nBfQCjll5siT9a8NTg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151933851152:android:1f4ec706720c5973c99c95",
+        "android_client_info": {
+          "package_name": "com.dilsnap.dilsnap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3OsUl81lyPth03nBfQCjll5siT9a8NTg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
