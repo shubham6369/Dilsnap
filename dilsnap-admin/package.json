@@ -10,6 +10,7 @@
     "test": "npx tsx --tsconfig ./tsconfig.json ./test/backend.test.mjs && npx tsx --tsconfig ./tsconfig.json ./test/routes.test.mjs"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@vercel/blob": "^2.8.2",
     "firebase-admin": "^14.5.0",

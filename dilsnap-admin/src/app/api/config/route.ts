@@ -9,7 +9,18 @@ export async function OPTIONS() {
 export async function GET() {
   await store.ensureInitialized();
   const config = store.getConfig();
-  return jsonResponse({ success: true, data: config });
+  return jsonResponse({ success: true, data: config, config });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    await store.ensureInitialized();
+    const body = await request.json();
+    const updated = await store.updateConfig(body);
+    return jsonResponse({ success: true, message: 'Configuration updated', data: updated, config: updated });
+  } catch {
+    return jsonResponse({ success: false, error: 'Invalid JSON' }, 400);
+  }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -17,7 +28,7 @@ export async function PATCH(request: NextRequest) {
     await store.ensureInitialized();
     const body = await request.json();
     const updated = await store.updateConfig(body);
-    return jsonResponse({ success: true, message: 'Configuration updated', data: updated });
+    return jsonResponse({ success: true, message: 'Configuration updated', data: updated, config: updated });
   } catch {
     return jsonResponse({ success: false, error: 'Invalid JSON' }, 400);
   }

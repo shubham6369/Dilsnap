@@ -14,20 +14,25 @@ import {
   Globe,
 } from 'lucide-react';
 import { AppConfig } from '@/lib/types';
+import { useToast } from '@/components/Toast';
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     fetch('/api/config')
       .then((r) => r.json())
       .then((data) => {
-        if (data.success) {
-          setConfig(data.data);
+        if (data.success && (data.data || data.config)) {
+          setConfig(data.data || data.config);
         }
+      })
+      .catch(() => {
+        showToast('Failed to load system configuration', 'error');
       })
       .finally(() => setLoading(false));
   }, []);
@@ -48,17 +53,30 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         setSavedSuccess(true);
+        showToast('System configuration saved and synchronized!', 'success');
         setTimeout(() => setSavedSuccess(false), 3000);
+      } else {
+        showToast(data.error || 'Failed to save settings', 'error');
       }
     } catch {
-      alert('Failed to save settings');
+      showToast('Network error while saving settings', 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
   if (loading || !config) {
-    return <div className="text-gray-400 text-sm">Loading configuration...</div>;
+    return (
+      <div className="space-y-6 max-w-4xl animate-pulse">
+        <div className="h-10 w-64 bg-white/10 rounded-2xl" />
+        <div className="h-4 w-96 bg-white/5 rounded-xl" />
+        <div className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
+          <div className="h-6 w-48 bg-white/10 rounded" />
+          <div className="h-20 bg-white/5 rounded-2xl" />
+          <div className="h-20 bg-white/5 rounded-2xl" />
+        </div>
+      </div>
+    );
   }
 
   return (

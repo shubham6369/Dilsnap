@@ -1,5 +1,32 @@
-import assert from 'node:assert/strict';
-import { store, normalizePhone } from '../src/lib/store.ts';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const adminDir = path.resolve(__dirname, '..');
+
+// Self-spawning shim: If invoked via raw node without tsx module hooks, delegate to npx tsx
+if (!process.env.DILSNAP_RUNNING_TSX && !process.env.TSX_TSCONFIG_PATH) {
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const child = spawnSync(
+    npxCmd,
+    ['tsx', '--tsconfig', path.join(adminDir, 'tsconfig.json'), __filename, ...process.argv.slice(2)],
+    {
+      cwd: adminDir,
+      stdio: 'inherit',
+      shell: true,
+      env: {
+        ...process.env,
+        DILSNAP_RUNNING_TSX: '1',
+      },
+    }
+  );
+  process.exit(child.status ?? (child.error ? 1 : 0));
+}
+
+const assert = (await import('node:assert/strict')).default;
+const { store, normalizePhone } = await import('../src/lib/store.ts');
 
 async function runTests() {
   console.log('--- Starting DilSnap Backend Integration Tests ---');

@@ -14,6 +14,8 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { Host } from '@/lib/types';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmModal';
 
 export default function HostsPage() {
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -22,6 +24,9 @@ export default function HostsPage() {
   const [genderFilter, setGenderFilter] = useState('All');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingHost, setEditingHost] = useState<Host | null>(null);
+
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
 
   // Form State for Add/Edit
   const [formData, setFormData] = useState({
@@ -45,6 +50,7 @@ export default function HostsPage() {
       }
     } catch (e) {
       console.error(e);
+      showToast('Failed to load hosts', 'error');
     } finally {
       setLoading(false);
     }
@@ -55,24 +61,42 @@ export default function HostsPage() {
   }, []);
 
   const handleToggleOnline = async (host: Host) => {
+    const nextStatus = !host.isOnline;
     try {
       const res = await fetch(`/api/hosts/${host.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isOnline: !host.isOnline }),
+        body: JSON.stringify({ isOnline: nextStatus }),
       });
       const data = await res.json();
       if (data.success) {
-        setHosts(hosts.map((h) => (h.id === host.id ? { ...h, isOnline: !h.isOnline } : h)));
+        setHosts(hosts.map((h) => (h.id === host.id ? { ...h, isOnline: nextStatus } : h)));
+        showToast(
+          `${host.name} is now ${nextStatus ? 'ONLINE' : 'OFFLINE'}`,
+          nextStatus ? 'success' : 'info'
+        );
+      } else {
+        showToast(data.error || 'Failed to update status', 'error');
       }
     } catch {
-      alert('Failed to update status');
+      showToast('Network error while updating status', 'error');
     }
   };
 
   const handleToggleBan = async (host: Host) => {
     const nextBan = !host.isBanned;
-    if (!confirm(`Are you sure you want to ${nextBan ? 'BAN' : 'UNBAN'} ${host.name}?`)) return;
+    const ok = await confirm({
+      title: nextBan ? 'Ban Verified Host' : 'Unban Host',
+      message: `Are you sure you want to ${nextBan ? 'BAN' : 'UNBAN'} ${host.name}? ${
+        nextBan
+          ? 'Banned hosts will be forced offline and cannot receive new calls.'
+          : 'Host access will be restored.'
+      }`,
+      confirmText: nextBan ? 'Ban Host' : 'Unban Host',
+      variant: nextBan ? 'danger' : 'primary',
+    });
+    if (!ok) return;
+
     try {
       const res = await fetch(`/api/hosts/${host.id}`, {
         method: 'PATCH',
@@ -82,22 +106,38 @@ export default function HostsPage() {
       const data = await res.json();
       if (data.success) {
         setHosts(hosts.map((h) => (h.id === host.id ? { ...h, isBanned: nextBan } : h)));
+        showToast(
+          nextBan ? `Host ${host.name} has been banned.` : `Host ${host.name} has been restored.`,
+          nextBan ? 'warning' : 'success'
+        );
+      } else {
+        showToast(data.error || 'Failed to update ban status', 'error');
       }
     } catch {
-      alert('Failed to update ban status');
+      showToast('Network error while updating ban status', 'error');
     }
   };
 
   const handleDeleteHost = async (host: Host) => {
-    if (!confirm(`Delete host ${host.name}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: 'Delete Host Account',
+      message: `Permanently delete host profile for ${host.name}? This cannot be undone.`,
+      confirmText: 'Delete Host',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
     try {
       const res = await fetch(`/api/hosts/${host.id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         setHosts(hosts.filter((h) => h.id !== host.id));
+        showToast(`Host ${host.name} deleted`, 'success');
+      } else {
+        showToast(data.error || 'Failed to delete host', 'error');
       }
     } catch {
-      alert('Failed to delete host');
+      showToast('Network error while deleting host', 'error');
     }
   };
 
@@ -119,7 +159,10 @@ export default function HostsPage() {
         if (data.success) {
           setEditingHost(null);
           setIsAddModalOpen(false);
+          showToast(`Host ${formData.name} updated successfully`, 'success');
           fetchHosts();
+        } else {
+          showToast(data.error || 'Failed to update host', 'error');
         }
       } else {
         // Create
@@ -131,11 +174,14 @@ export default function HostsPage() {
         const data = await res.json();
         if (data.success) {
           setIsAddModalOpen(false);
+          showToast(`Host ${formData.name} created successfully`, 'success');
           fetchHosts();
+        } else {
+          showToast(data.error || 'Failed to create host', 'error');
         }
       }
     } catch {
-      alert('Error saving host');
+      showToast('Network error while saving host', 'error');
     }
   };
 

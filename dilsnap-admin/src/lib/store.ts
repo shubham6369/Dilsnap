@@ -1,5 +1,18 @@
 import { Host, User, ActiveCall, CoinPackage, Gift, AppConfig, WalletTransaction, CallSession, PaymentOrder } from './types';
 import { put, list } from '@vercel/blob';
+import {
+  syncHostToFirestore,
+  deleteHostFromFirestore,
+  syncPackageToFirestore,
+  deletePackageFromFirestore,
+  syncGiftToFirestore,
+  deleteGiftFromFirestore,
+  syncConfigToFirestore,
+  syncUserToFirestore,
+  syncCallSessionToFirestore,
+  syncWalletTxToFirestore,
+  syncPaymentOrderToFirestore,
+} from './firestoreSync';
 
 // Helper: Normalize phone numbers for consistent lookups (+91 98765 43210 -> +919876543210)
 export function normalizePhone(raw: string): string {
@@ -449,7 +462,10 @@ export const store = {
       joinedDate: new Date().toISOString().split('T')[0],
     };
     state.hosts.unshift(newHost);
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncHostToFirestore(newHost),
+    ]);
     return newHost;
   },
 
@@ -457,15 +473,24 @@ export const store = {
     const index = state.hosts.findIndex((h) => h.id === id);
     if (index === -1) return null;
     state.hosts[index] = { ...state.hosts[index], ...updates };
-    await persistState();
-    return state.hosts[index];
+    const updated = state.hosts[index];
+    await Promise.allSettled([
+      persistState(),
+      syncHostToFirestore(updated),
+    ]);
+    return updated;
   },
 
   deleteHost: async (id: string) => {
     const prevLen = state.hosts.length;
     state.hosts = state.hosts.filter((h) => h.id !== id);
     const deleted = state.hosts.length < prevLen;
-    if (deleted) await persistState();
+    if (deleted) {
+      await Promise.allSettled([
+        persistState(),
+        deleteHostFromFirestore(id),
+      ]);
+    }
     return deleted;
   },
 
@@ -511,7 +536,11 @@ export const store = {
 
     state.users.unshift(newUser);
     state.walletTransactions.unshift(welcomeTx);
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncUserToFirestore(newUser),
+      syncWalletTxToFirestore(welcomeTx),
+    ]);
     return newUser;
   },
 
@@ -530,9 +559,19 @@ export const store = {
       user.coins = updates.coins;
       user.coinBalance = updates.coins;
     }
+    if (updates.isBanned !== undefined) {
+      user.isBanned = updates.isBanned;
+    }
 
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncUserToFirestore(user),
+    ]);
     return user;
+  },
+
+  updateUser: async (idOrPhone: string, updates: Partial<User>) => {
+    return store.updateUserProfile(idOrPhone, updates);
   },
 
   adjustUserCoins: async (id: string, delta: number) => {
@@ -551,7 +590,11 @@ export const store = {
     };
     state.walletTransactions.unshift(tx);
 
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncUserToFirestore(user),
+      syncWalletTxToFirestore(tx),
+    ]);
     return user;
   },
 
@@ -559,7 +602,10 @@ export const store = {
     const user = internalFindUser(id);
     if (!user) return null;
     user.isBanned = !user.isBanned;
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncUserToFirestore(user),
+    ]);
     return user;
   },
 
@@ -608,7 +654,10 @@ export const store = {
     // Issue session token
     const token = `tok_${user.id}_${Date.now()}`;
     user.token = token;
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncUserToFirestore(user),
+    ]);
 
     return { success: true, user, token };
   },
@@ -641,9 +690,17 @@ export const store = {
       timestamp: new Date().toISOString(),
     };
     state.walletTransactions.unshift(tx);
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncUserToFirestore(user),
+      syncWalletTxToFirestore(tx),
+    ]);
 
     return { success: true, newBalance: user.coins, transaction: tx };
+  },
+
+  creditUserCoins: async (userIdOrPhone: string, amount: number, reason?: string) => {
+    return store.creditWallet(userIdOrPhone, amount, reason || 'Credit User Coins');
   },
 
   deductWallet: async (userIdOrPhone: string, amount: number, reason: string) => {
@@ -676,9 +733,17 @@ export const store = {
       timestamp: new Date().toISOString(),
     };
     state.walletTransactions.unshift(tx);
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncUserToFirestore(user),
+      syncWalletTxToFirestore(tx),
+    ]);
 
     return { success: true, newBalance: user.coins, transaction: tx };
+  },
+
+  deductUserCoins: async (userIdOrPhone: string, amount: number, reason?: string) => {
+    return store.deductWallet(userIdOrPhone, amount, reason || 'Deduct User Coins');
   },
 
   getTransactions: (userId?: string) => {
@@ -759,7 +824,11 @@ export const store = {
     state.callSessions.unshift(session);
     state.activeCalls.unshift(activeCall);
 
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncCallSessionToFirestore(session),
+      syncHostToFirestore(host),
+    ]);
     return { success: true, session, ratePerMinute: rate };
   },
 
@@ -797,7 +866,13 @@ export const store = {
       const host = state.hosts.find((h) => h.id === session.hostId);
       if (host) host.isInCall = false;
 
-      await persistState();
+      const syncCalls: Promise<any>[] = [
+        persistState(),
+        syncCallSessionToFirestore(session),
+      ];
+      if (host) syncCalls.push(syncHostToFirestore(host));
+      await Promise.allSettled(syncCalls);
+
       return {
         success: false,
         error: 'Insufficient coins to continue call. Auto-terminated.',
@@ -815,12 +890,29 @@ export const store = {
       active.coinsDeducted = session.coinsDeducted;
     }
 
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncCallSessionToFirestore(session),
+    ]);
     return {
       success: true,
       session,
       remainingCoins: deduction.newBalance,
     };
+  },
+
+  recordCallSession: async (session: CallSession) => {
+    const existingIndex = state.callSessions.findIndex((s) => s.id === session.id);
+    if (existingIndex !== -1) {
+      state.callSessions[existingIndex] = { ...state.callSessions[existingIndex], ...session };
+    } else {
+      state.callSessions.unshift(session);
+    }
+    await Promise.allSettled([
+      persistState(),
+      syncCallSessionToFirestore(session),
+    ]);
+    return session;
   },
 
   endCallSession: async (sessionId: string, details?: { durationSeconds?: number; coinsDeducted?: number }) => {
@@ -854,19 +946,23 @@ export const store = {
       state.callHistory.unshift(active);
     }
 
+    const syncPromises: Promise<any>[] = [persistState()];
     if (session) {
+      syncPromises.push(syncCallSessionToFirestore(session));
       const host = state.hosts.find((h) => h.id === session.hostId);
       if (host) {
         host.isInCall = false;
         host.totalCalls += 1;
+        syncPromises.push(syncHostToFirestore(host));
       }
       const user = internalFindUser(session.userId);
       if (user) {
         user.totalCalls += 1;
+        syncPromises.push(syncUserToFirestore(user));
       }
     }
 
-    await persistState();
+    await Promise.allSettled(syncPromises);
     return { success: true, session: session || null };
   },
 
@@ -888,7 +984,15 @@ export const store = {
     const host = state.hosts.find((h) => h.id === terminated.hostId);
     if (host) host.isInCall = false;
 
-    await persistState();
+    const syncPromises: Promise<any>[] = [persistState()];
+    if (session) {
+      syncPromises.push(syncCallSessionToFirestore(session));
+    }
+    if (host) {
+      syncPromises.push(syncHostToFirestore(host));
+    }
+
+    await Promise.allSettled(syncPromises);
     return terminated;
   },
 
@@ -922,7 +1026,10 @@ export const store = {
     };
 
     state.paymentOrders.unshift(order);
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncPaymentOrderToFirestore(order),
+    ]);
 
     return {
       success: true,
@@ -955,7 +1062,15 @@ export const store = {
       user.totalSpentInr += order.amountInr;
     }
 
-    await persistState();
+    const syncPromises: Promise<any>[] = [
+      persistState(),
+      syncPaymentOrderToFirestore(order),
+    ];
+    if (user) {
+      syncPromises.push(syncUserToFirestore(user));
+    }
+    await Promise.allSettled(syncPromises);
+
     return {
       success: true,
       order,
@@ -966,49 +1081,89 @@ export const store = {
   // Packages
   getPackages: () => [...state.coinPackages],
 
+  getPackageById: (id: string) => state.coinPackages.find((p) => p.id === id) || null,
+
   addPackage: async (pkg: Omit<CoinPackage, 'id'>) => {
     const newPkg: CoinPackage = { ...pkg, id: `pkg_${Date.now()}` };
     state.coinPackages.push(newPkg);
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncPackageToFirestore(newPkg),
+    ]);
     return newPkg;
   },
 
-  updatePackage: async (id: string, updates: Partial<CoinPackage>) => {
+  updatePackage: async (id: string, updates: Partial<CoinPackage> & { price?: number; isActive?: boolean }) => {
     const index = state.coinPackages.findIndex((p) => p.id === id);
     if (index === -1) return null;
-    state.coinPackages[index] = { ...state.coinPackages[index], ...updates };
-    await persistState();
-    return state.coinPackages[index];
+    const finalUpdates: any = { ...updates };
+    if (updates.price !== undefined && updates.priceInr === undefined) {
+      finalUpdates.priceInr = Number(updates.price);
+    }
+    state.coinPackages[index] = { ...state.coinPackages[index], ...finalUpdates };
+    const updated = state.coinPackages[index];
+    await Promise.allSettled([
+      persistState(),
+      syncPackageToFirestore(updated),
+    ]);
+    return updated;
   },
 
   deletePackage: async (id: string) => {
+    const prevLen = state.coinPackages.length;
     state.coinPackages = state.coinPackages.filter((p) => p.id !== id);
-    await persistState();
-    return true;
+    const deleted = state.coinPackages.length < prevLen;
+    if (deleted) {
+      await Promise.allSettled([
+        persistState(),
+        deletePackageFromFirestore(id),
+      ]);
+    }
+    return deleted;
   },
 
   // Gifts
   getGifts: () => [...state.gifts],
 
+  getGiftById: (id: string) => state.gifts.find((g) => g.id === id) || null,
+
   addGift: async (gift: Omit<Gift, 'id'>) => {
     const newGift: Gift = { ...gift, id: `gift_${Date.now()}` };
     state.gifts.push(newGift);
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncGiftToFirestore(newGift),
+    ]);
     return newGift;
   },
 
-  updateGift: async (id: string, updates: Partial<Gift>) => {
+  updateGift: async (id: string, updates: Partial<Gift> & { icon?: string; animationPath?: string; isActive?: boolean }) => {
     const index = state.gifts.findIndex((g) => g.id === id);
     if (index === -1) return null;
-    state.gifts[index] = { ...state.gifts[index], ...updates };
-    await persistState();
-    return state.gifts[index];
+    const finalUpdates: any = { ...updates };
+    if (updates.icon && !updates.assetPath) {
+      finalUpdates.assetPath = updates.icon;
+    }
+    state.gifts[index] = { ...state.gifts[index], ...finalUpdates };
+    const updated = state.gifts[index];
+    await Promise.allSettled([
+      persistState(),
+      syncGiftToFirestore(updated),
+    ]);
+    return updated;
   },
 
   deleteGift: async (id: string) => {
+    const prevLen = state.gifts.length;
     state.gifts = state.gifts.filter((g) => g.id !== id);
-    await persistState();
-    return true;
+    const deleted = state.gifts.length < prevLen;
+    if (deleted) {
+      await Promise.allSettled([
+        persistState(),
+        deleteGiftFromFirestore(id),
+      ]);
+    }
+    return deleted;
   },
 
   // Config
@@ -1016,7 +1171,10 @@ export const store = {
 
   updateConfig: async (updates: Partial<AppConfig>) => {
     state.appConfig = { ...state.appConfig, ...updates };
-    await persistState();
+    await Promise.allSettled([
+      persistState(),
+      syncConfigToFirestore(state.appConfig),
+    ]);
     return state.appConfig;
   },
 

@@ -13,8 +13,11 @@ import {
   CreditCard,
   ShieldAlert,
   ArrowUpRight,
+  ShieldCheck,
 } from 'lucide-react';
 import { User } from '@/lib/types';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmModal';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -25,6 +28,8 @@ export default function UsersPage() {
   const [walletAction, setWalletAction] = useState<'add' | 'deduct'>('add');
   const [walletReason, setWalletReason] = useState('Admin Promotional Grant');
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
 
   const fetchUsers = async () => {
     try {
@@ -35,6 +40,7 @@ export default function UsersPage() {
       }
     } catch (e) {
       console.error(e);
+      showToast('Failed to load users list', 'error');
     } finally {
       setLoading(false);
     }
@@ -63,19 +69,53 @@ export default function UsersPage() {
       const data = await res.json();
       if (data.success) {
         setIsWalletModalOpen(false);
+        showToast(
+          `Successfully ${walletAction === 'add' ? 'credited' : 'deducted'} ${walletAmount} 💎 for ${selectedUser.name}`,
+          'success'
+        );
         fetchUsers();
+      } else {
+        showToast(data.error || 'Failed to update user wallet', 'error');
       }
     } catch {
-      alert('Failed to update wallet');
+      showToast('Network error while updating user wallet', 'error');
     }
   };
 
   const handleToggleUserBan = async (user: User) => {
     const nextBan = !user.isBanned;
-    if (!confirm(`Are you sure you want to ${nextBan ? 'SUSPEND' : 'RESTORE'} user ${user.name}?`)) return;
+    const ok = await confirm({
+      title: nextBan ? 'Suspend User Access' : 'Restore User Access',
+      message: `Are you sure you want to ${nextBan ? 'SUSPEND' : 'RESTORE'} user "${user.name}" (${user.mobile})? ${
+        nextBan
+          ? 'Suspended callers will immediately be blocked from initiating calls, recharging coins, or sending gifts.'
+          : 'Restoring access will allow the caller to resume normal app usage.'
+      }`,
+      confirmText: nextBan ? 'Suspend User' : 'Restore User',
+      variant: nextBan ? 'danger' : 'primary',
+    });
+    if (!ok) return;
 
-    // For in-memory, we can toggle directly via local state update or API
-    setUsers(users.map((u) => (u.id === user.id ? { ...u, isBanned: nextBan } : u)));
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggleBan' }),
+      });
+      const data = await res.json();
+      if (data.success && (data.data || data.user)) {
+        const updated = data.data || data.user;
+        setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
+        showToast(
+          nextBan ? `User ${user.name} has been suspended.` : `User ${user.name} has been restored.`,
+          nextBan ? 'warning' : 'success'
+        );
+      } else {
+        showToast(data.error || 'Failed to update ban status', 'error');
+      }
+    } catch {
+      showToast('Network error while updating ban status', 'error');
+    }
   };
 
   const openWalletModal = (user: User) => {
@@ -144,66 +184,98 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-white/[0.02] transition">
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={user.avatarUrl}
-                        alt={user.name}
-                        className="w-9 h-9 rounded-full object-cover border border-white/20"
-                      />
-                      <div>
-                        <div className="font-bold text-white text-sm">{user.name}</div>
-                        <div className="text-[10px] text-gray-400">Joined: {user.joinedDate}</div>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, idx) => (
+                  <tr key={`skeleton-${idx}`} className="animate-pulse">
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-white/10" />
+                        <div className="space-y-1.5">
+                          <div className="w-24 h-3.5 bg-white/10 rounded" />
+                          <div className="w-16 h-2.5 bg-white/5 rounded" />
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono text-gray-300">{user.mobile}</td>
-                  <td className="py-3.5 px-4 font-bold text-amber-400">
-                    <span className="flex items-center gap-1.5">
-                      <Coins className="w-3.5 h-3.5" />
-                      {user.coinBalance} 💎
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-gray-300 font-semibold">{user.totalCalls} calls</td>
-                  <td className="py-3.5 px-4 font-bold text-emerald-400">₹{user.totalSpentInr}</td>
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        user.isBanned
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                          : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      }`}
-                    >
-                      {user.isBanned ? 'SUSPENDED' : 'ACTIVE'}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => openWalletModal(user)}
-                        className="px-3 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-bold text-xs border border-amber-500/30 transition flex items-center gap-1"
-                      >
-                        <Coins className="w-3 h-3" />
-                        <span>Adjust Coins</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleToggleUserBan(user)}
-                        className={`p-1.5 rounded-lg border transition ${
-                          user.isBanned
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            : 'bg-red-500/15 text-red-400 border-red-500/20 hover:bg-red-500/25'
-                        }`}
-                        title={user.isBanned ? 'Reactivate User' : 'Suspend User'}
-                      >
-                        <Ban className="w-3.5 h-3.5" />
-                      </button>
+                    </td>
+                    <td className="py-4 px-4"><div className="w-24 h-3 bg-white/10 rounded" /></td>
+                    <td className="py-4 px-4"><div className="w-16 h-3 bg-white/10 rounded" /></td>
+                    <td className="py-4 px-4"><div className="w-14 h-3 bg-white/10 rounded" /></td>
+                    <td className="py-4 px-4"><div className="w-16 h-3 bg-white/10 rounded" /></td>
+                    <td className="py-4 px-4"><div className="w-20 h-5 bg-white/10 rounded-full" /></td>
+                    <td className="py-4 px-4 text-right"><div className="w-24 h-7 bg-white/10 rounded-lg ml-auto" /></td>
+                  </tr>
+                ))
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-gray-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Users className="w-8 h-8 text-gray-500" />
+                      <div className="text-sm font-semibold text-gray-300">No callers found</div>
+                      <div className="text-xs text-gray-400">No users match &ldquo;{search}&rdquo;. Try another search term.</div>
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredUsers.map((user) => (
+                  <tr key={user.id} className="hover:bg-white/[0.02] transition">
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={user.avatarUrl}
+                          alt={user.name}
+                          className="w-9 h-9 rounded-full object-cover border border-white/20"
+                        />
+                        <div>
+                          <div className="font-bold text-white text-sm">{user.name}</div>
+                          <div className="text-[10px] text-gray-400">Joined: {user.joinedDate}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-gray-300">{user.mobile}</td>
+                    <td className="py-3.5 px-4 font-bold text-amber-400">
+                      <span className="flex items-center gap-1.5">
+                        <Coins className="w-3.5 h-3.5" />
+                        {user.coinBalance} 💎
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-gray-300 font-semibold">{user.totalCalls} calls</td>
+                    <td className="py-3.5 px-4 font-bold text-emerald-400">₹{user.totalSpentInr}</td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          user.isBanned
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        }`}
+                      >
+                        {user.isBanned ? 'SUSPENDED' : 'ACTIVE'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openWalletModal(user)}
+                          className="px-3 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-bold text-xs border border-amber-500/30 transition flex items-center gap-1"
+                        >
+                          <Coins className="w-3 h-3" />
+                          <span>Adjust Coins</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleUserBan(user)}
+                          className={`p-1.5 rounded-lg border transition ${
+                            user.isBanned
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                              : 'bg-red-500/15 text-red-400 border-red-500/20 hover:bg-red-500/25'
+                          }`}
+                          title={user.isBanned ? 'Reactivate User' : 'Suspend User'}
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -12,12 +12,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { userId, amount, action, reason } = body;
 
-    if (!userId || amount === undefined) {
-      return jsonResponse({ success: false, error: 'userId and amount are required' }, 400);
+    const rawAmount = Number(amount);
+    if (
+      !userId ||
+      typeof userId !== 'string' ||
+      !userId.trim() ||
+      amount === undefined ||
+      amount === null ||
+      typeof amount === 'boolean' ||
+      isNaN(rawAmount) ||
+      !Number.isInteger(rawAmount) ||
+      rawAmount <= 0
+    ) {
+      return jsonResponse({ success: false, error: 'userId and a positive whole integer amount are required' }, 400);
     }
 
-    const delta = action === 'deduct' ? -Math.abs(Number(amount)) : Math.abs(Number(amount));
-    const updated = await store.adjustUserCoins(userId, delta);
+    if (action !== undefined && action !== 'credit' && action !== 'deduct') {
+      return jsonResponse({ success: false, error: "action must be either 'credit' or 'deduct'" }, 400);
+    }
+
+    const delta = action === 'deduct' ? -rawAmount : rawAmount;
+    const updated = await store.adjustUserCoins(userId.trim(), delta);
 
     if (!updated) {
       return jsonResponse({ success: false, error: 'User not found' }, 404);
@@ -25,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     return jsonResponse({
       success: true,
-      message: `Successfully ${action === 'deduct' ? 'deducted' : 'added'} ${Math.abs(delta)} coins`,
+      message: `Successfully ${action === 'deduct' ? 'deducted' : 'added'} ${rawAmount} coins`,
       data: {
         userId: updated.id,
         newBalance: updated.coinBalance,

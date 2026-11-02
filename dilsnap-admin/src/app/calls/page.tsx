@@ -13,11 +13,16 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import { ActiveCall } from '@/lib/types';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmModal';
 
 export default function CallsPage() {
   const [activeCalls, setActiveCalls] = useState<ActiveCall[]>([]);
   const [history, setHistory] = useState<ActiveCall[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
 
   const fetchCalls = async () => {
     try {
@@ -29,6 +34,7 @@ export default function CallsPage() {
       }
     } catch (e) {
       console.error(e);
+      showToast('Failed to fetch call telemetry', 'error');
     } finally {
       setLoading(false);
     }
@@ -41,7 +47,14 @@ export default function CallsPage() {
   }, []);
 
   const handleTerminate = async (callId: string) => {
-    if (!confirm('FORCIBLY TERMINATE THIS CALL IMMEDIATELY?\nThe caller and host will be disconnected.')) return;
+    const ok = await confirm({
+      title: 'Forcibly Terminate Live Call',
+      message: 'Are you sure you want to forcibly terminate this live call immediately? The caller and host will be disconnected.',
+      confirmText: 'Terminate Call',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
     try {
       const res = await fetch('/api/calls/terminate', {
         method: 'POST',
@@ -50,10 +63,13 @@ export default function CallsPage() {
       });
       const data = await res.json();
       if (data.success) {
+        showToast('Call terminated successfully', 'success');
         fetchCalls();
+      } else {
+        showToast(data.error || 'Failed to terminate call', 'error');
       }
     } catch {
-      alert('Error terminating call');
+      showToast('Network error while terminating call', 'error');
     }
   };
 

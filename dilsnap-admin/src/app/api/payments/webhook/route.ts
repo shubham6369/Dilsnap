@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { store } from '@/lib/store';
 import { jsonResponse, corsHeaders } from '@/lib/cors';
@@ -9,7 +10,49 @@ export async function OPTIONS() {
 export async function POST(req: NextRequest) {
   try {
     await store.ensureInitialized();
-    const rawBody = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => null);
+
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+      return jsonResponse({ success: false, error: 'Invalid webhook payload structure' }, 400);
+    }
+
+    // HMAC signature verification (strictly enforced in production)
+    const isProduction = process.env.NODE_ENV === 'production';
+    const webhookSecret = process.env.CASHFREE_SECRET_KEY;
+    const signature = req.headers.get('x-webhook-signature') || req.headers.get('x-cashfree-signature');
+
+    if (isProduction && !webhookSecret) {
+      console.error('[Webhook] CASHFREE_SECRET_KEY is missing in production environment');
+      return jsonResponse({ success: false, error: 'Webhook secret not configured' }, 500);
+    }
+
+    if (webhookSecret || signature) {
+      if (!signature) {
+        return jsonResponse({ success: false, error: 'Missing webhook signature header' }, 401);
+      }
+
+      const expectedSig = crypto
+        .createHmac('sha256', webhookSecret || '')
+        .update(JSON.stringify(rawBody))
+        .digest('base64');
+
+      const isSandboxAllowed = !isProduction && signature === 'sandbox_test_signature';
+
+      let signaturesMatch = false;
+      try {
+        const sigBuf = Buffer.from(signature);
+        const expBuf = Buffer.from(expectedSig);
+        if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+          signaturesMatch = true;
+        }
+      } catch {
+        signaturesMatch = false;
+      }
+
+      if (!signaturesMatch && !isSandboxAllowed) {
+        return jsonResponse({ success: false, error: 'Invalid webhook signature' }, 401);
+      }
+    }
 
     // Support both direct DilSnap order schema and Cashfree webhook payload
     const orderId =
@@ -31,15 +74,16 @@ export async function POST(req: NextRequest) {
       rawBody.data?.payment?.payment_status ||
       'SUCCESS';
 
-    if (!orderId) {
+    if (!orderId || typeof orderId !== 'string' || !orderId.trim()) {
       return jsonResponse({ success: false, error: 'orderId is required' }, 400);
     }
 
     // Verify payment status represents successful capture
+    const statusStr = String(paymentStatus || '').toUpperCase();
     const isSuccess =
-      paymentStatus.toUpperCase() === 'SUCCESS' ||
-      paymentStatus.toUpperCase() === 'PAID' ||
-      paymentStatus.toUpperCase() === 'COMPLETED';
+      statusStr === 'SUCCESS' ||
+      statusStr === 'PAID' ||
+      statusStr === 'COMPLETED';
 
     if (!isSuccess) {
       return jsonResponse(
@@ -51,7 +95,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await store.processPaymentWebhook(orderId, paymentSessionId);
+    const result = await store.processPaymentWebhook(orderId.trim(), paymentSessionId);
     if (!result.success) {
       return jsonResponse({ success: false, error: result.error }, 400);
     }

@@ -17,13 +17,20 @@ import {
   Sparkles,
   CheckCircle2,
   XCircle,
+  BarChart3,
+  Gift,
 } from 'lucide-react';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmModal';
 
 export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<any>(null);
   const [activeCalls, setActiveCalls] = useState<any[]>([]);
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
 
   const fetchDashboardData = async () => {
     try {
@@ -34,10 +41,11 @@ export default function DashboardPage() {
       ]);
 
       if (resAnalytics.success) setAnalytics(resAnalytics.data);
-      if (resCalls.success) setActiveCalls(resCalls.data.activeCalls || []);
+      if (resCalls.success) setActiveCalls(resCalls.data?.activeCalls || []);
       if (resHosts.success) setHosts(resHosts.data || []);
     } catch (e) {
       console.error(e);
+      showToast('Failed to refresh dashboard data', 'error');
     } finally {
       setLoading(false);
     }
@@ -45,12 +53,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 5000);
+    const interval = setInterval(fetchDashboardData, 8000);
     return () => clearInterval(interval);
   }, []);
 
   const handleTerminateCall = async (callId: string) => {
-    if (!confirm('Are you sure you want to forcibly terminate this live call?')) return;
+    const ok = await confirm({
+      title: 'Forcibly Terminate Live Call',
+      message: 'Are you sure you want to forcibly terminate this live call? The caller and host will be immediately disconnected and the WebRTC session cleaned up.',
+      confirmText: 'Terminate Call',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
     try {
       const res = await fetch('/api/calls/terminate', {
         method: 'POST',
@@ -59,10 +74,13 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
+        showToast('Live call terminated successfully', 'success');
         fetchDashboardData();
+      } else {
+        showToast(data.error || 'Failed to terminate call', 'error');
       }
     } catch {
-      alert('Failed to terminate call');
+      showToast('Network error while terminating call', 'error');
     }
   };
 
@@ -117,32 +135,50 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="mt-4">
-            <div className="text-3xl font-black text-white">
-              ₹{analytics ? (analytics.totalRevenue).toLocaleString() : '52,540'}
-            </div>
-            <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-400 font-semibold">
-              <ArrowUpRight className="w-4 h-4" />
-              <span>+18.4% this week</span>
-              <span className="text-gray-400 font-normal ml-1">via Cashfree UPI</span>
-            </div>
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                <div className="w-32 h-8 bg-white/10 rounded" />
+                <div className="w-24 h-3 bg-white/5 rounded" />
+              </div>
+            ) : (
+              <>
+                <div className="text-3xl font-black text-white">
+                  ₹{analytics?.totalRevenue ? Number(analytics.totalRevenue).toLocaleString() : '0'}
+                </div>
+                <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-400 font-semibold">
+                  <ArrowUpRight className="w-4 h-4" />
+                  <span>+18.4% this week</span>
+                  <span className="text-gray-400 font-normal ml-1">via Cashfree UPI</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
         {/* Metric 2: Coins Burned Today */}
         <div className="glass-card rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-400">Today's Coins Burned</span>
+            <span className="text-xs font-medium text-gray-400">Today&apos;s Coins Burned</span>
             <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400">
               <Flame className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4">
-            <div className="text-3xl font-black text-white">
-              {analytics ? analytics.todayBurnedCoins.toLocaleString() : '2,840'} 💎
-            </div>
-            <div className="flex items-center gap-1.5 mt-2 text-xs text-amber-400 font-semibold">
-              <span>Avg {analytics?.avgCallDurationMinutes || '6.4 min'} per call</span>
-            </div>
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                <div className="w-28 h-8 bg-white/10 rounded" />
+                <div className="w-24 h-3 bg-white/5 rounded" />
+              </div>
+            ) : (
+              <>
+                <div className="text-3xl font-black text-white">
+                  {analytics?.todayBurnedCoins ? Number(analytics.todayBurnedCoins).toLocaleString() : '0'} 💎
+                </div>
+                <div className="flex items-center gap-1.5 mt-2 text-xs text-amber-400 font-semibold">
+                  <span>Avg {analytics?.avgCallDurationMinutes || '6.4 min'} per call</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -155,16 +191,25 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="mt-4">
-            <div className="flex items-baseline gap-3">
-              <div className="text-3xl font-black text-white">{activeCalls.length}</div>
-              <span className="flex items-center gap-1 text-xs font-bold text-[#FF2D55] bg-[#FF2D55]/20 px-2 py-0.5 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#FF2D55] animate-ping" />
-                STREAMING
-              </span>
-            </div>
-            <div className="text-xs text-gray-400 mt-2">
-              Encrypted WebRTC P2P Streams
-            </div>
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                <div className="w-16 h-8 bg-white/10 rounded" />
+                <div className="w-24 h-3 bg-white/5 rounded" />
+              </div>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-3">
+                  <div className="text-3xl font-black text-white">{activeCalls.length}</div>
+                  <span className="flex items-center gap-1 text-xs font-bold text-[#FF2D55] bg-[#FF2D55]/20 px-2 py-0.5 rounded-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#FF2D55] animate-ping" />
+                    STREAMING
+                  </span>
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  Encrypted WebRTC P2P Streams
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -177,12 +222,21 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="mt-4">
-            <div className="text-3xl font-black text-white">
-              {analytics ? analytics.coinsInCirculation.toLocaleString() : '800'} 💎
-            </div>
-            <div className="text-xs text-purple-400 mt-2 font-medium">
-              In user wallets ready for call burn
-            </div>
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                <div className="w-28 h-8 bg-white/10 rounded" />
+                <div className="w-24 h-3 bg-white/5 rounded" />
+              </div>
+            ) : (
+              <>
+                <div className="text-3xl font-black text-white">
+                  {analytics?.coinsInCirculation ? Number(analytics.coinsInCirculation).toLocaleString() : '0'} 💎
+                </div>
+                <div className="text-xs text-purple-400 mt-2 font-medium">
+                  In user wallets ready for call burn
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -195,12 +249,21 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="mt-4">
-            <div className="text-3xl font-black text-white">
-              {analytics ? analytics.totalUsersCount.toLocaleString() : '1,424'}
-            </div>
-            <div className="text-xs text-blue-400 mt-2 font-medium">
-              +42 new registrations today
-            </div>
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                <div className="w-24 h-8 bg-white/10 rounded" />
+                <div className="w-24 h-3 bg-white/5 rounded" />
+              </div>
+            ) : (
+              <>
+                <div className="text-3xl font-black text-white">
+                  {analytics?.totalUsersCount ? Number(analytics.totalUsersCount).toLocaleString() : '0'}
+                </div>
+                <div className="text-xs text-blue-400 mt-2 font-medium">
+                  Active mobile caller profiles
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -213,15 +276,24 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="mt-4">
-            <div className="flex items-baseline gap-2">
-              <div className="text-3xl font-black text-white">
-                {analytics ? analytics.onlineHostsCount : 5}
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                <div className="w-20 h-8 bg-white/10 rounded" />
+                <div className="w-24 h-3 bg-white/5 rounded" />
               </div>
-              <span className="text-xs text-gray-400 font-medium">/ {hosts.length} Total</span>
-            </div>
-            <div className="text-xs text-emerald-400 mt-2 font-semibold">
-              High listener availability
-            </div>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <div className="text-3xl font-black text-white">
+                    {analytics?.onlineHostsCount ?? hosts.filter((h) => h.isOnline).length}
+                  </div>
+                  <span className="text-xs text-gray-400 font-medium">/ {hosts.length} Total</span>
+                </div>
+                <div className="text-xs text-emerald-400 mt-2 font-semibold">
+                  High listener availability
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

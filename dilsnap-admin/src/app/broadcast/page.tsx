@@ -12,6 +12,8 @@ import {
   Radio,
 } from 'lucide-react';
 
+import { useToast } from '@/components/Toast';
+
 export default function BroadcastPage() {
   const [active, setActive] = useState(true);
   const [title, setTitle] = useState('✨ Welcome to DilSnap!');
@@ -21,18 +23,22 @@ export default function BroadcastPage() {
   const [actionUrl, setActionUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     fetch('/api/config')
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.data.broadcastNotice) {
-          const b = data.data.broadcastNotice;
+        if (data.success && (data.data?.broadcastNotice || data.config?.broadcastNotice)) {
+          const b = data.data?.broadcastNotice || data.config?.broadcastNotice;
           setActive(b.active ?? true);
           setTitle(b.title || '');
           setMessage(b.message || '');
           setActionUrl(b.actionUrl || '');
         }
+      })
+      .catch(() => {
+        showToast('Failed to load current broadcast notice', 'error');
       });
   }, []);
 
@@ -58,10 +64,13 @@ export default function BroadcastPage() {
       const data = await res.json();
       if (data.success) {
         setSavedSuccess(true);
+        showToast('Broadcast published live to mobile app!', 'success');
         setTimeout(() => setSavedSuccess(false), 3000);
+      } else {
+        showToast(data.error || 'Failed to publish broadcast', 'error');
       }
     } catch {
-      alert('Failed to publish broadcast');
+      showToast('Network error while publishing broadcast', 'error');
     } finally {
       setIsSaving(false);
     }

@@ -4,10 +4,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
+  BarChart3,
   Mic2,
   Users,
   PhoneCall,
   Coins,
+  Gift,
   Megaphone,
   Settings,
   Sparkles,
@@ -17,10 +19,12 @@ import {
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Live Call Monitor', href: '/calls', icon: PhoneCall, badge: 'Live' },
   { name: 'Hosts & Listeners', href: '/hosts', icon: Mic2 },
   { name: 'Users & Wallets', href: '/users', icon: Users },
-  { name: 'Live Call Monitor', href: '/calls', icon: PhoneCall, badge: 'Live' },
-  { name: 'Packages & Gifts', href: '/monetization', icon: Coins },
+  { name: 'Coin Packages', href: '/monetization', icon: Coins },
+  { name: 'Virtual Gifts', href: '/gifts', icon: Gift },
   { name: 'App Broadcast', href: '/broadcast', icon: Megaphone },
   { name: 'Global Settings', href: '/settings', icon: Settings },
 ];

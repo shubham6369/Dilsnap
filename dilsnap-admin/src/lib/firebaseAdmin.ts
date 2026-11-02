@@ -1,32 +1,43 @@
-import * as admin from 'firebase-admin';
+import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getAuth, type Auth } from 'firebase-admin/auth';
 import path from 'path';
 import fs from 'fs';
 
-let firebaseApp: admin.app.App | null = null;
+let firebaseApp: App | null = null;
 
-export function getFirebaseAdmin(): admin.app.App {
-  if (admin.apps.length > 0 && admin.apps[0]) {
-    return admin.apps[0];
+export function getFirebaseAdmin(): App {
+  const existingApps = getApps();
+  if (existingApps.length > 0 && existingApps[0]) {
+    return existingApps[0];
   }
 
-  const keyPath = path.join(process.cwd(), 'serviceAccountKey.json');
-  if (fs.existsSync(keyPath)) {
-    try {
-      const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-      firebaseApp = admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      return firebaseApp;
-    } catch (e) {
-      console.error('Error loading serviceAccountKey.json:', e);
+  const candidateKeyPaths = [
+    path.join(process.cwd(), 'serviceAccountKey.json'),
+    path.join(process.cwd(), 'dilsnap-admin', 'serviceAccountKey.json'),
+  ];
+
+  for (const keyPath of candidateKeyPaths) {
+    if (fs.existsSync(keyPath)) {
+      try {
+        const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+        firebaseApp = initializeApp({
+          credential: cert(serviceAccount),
+          projectId: serviceAccount.project_id || 'dilsnap-a72fb',
+        });
+        return firebaseApp;
+      } catch (e) {
+        console.error(`Error loading serviceAccountKey.json from ${keyPath}:`, e);
+      }
     }
   }
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     try {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      firebaseApp = admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
+      firebaseApp = initializeApp({
+        credential: cert(serviceAccount),
+        projectId: serviceAccount.project_id || 'dilsnap-a72fb',
       });
       return firebaseApp;
     } catch (e) {
@@ -34,18 +45,18 @@ export function getFirebaseAdmin(): admin.app.App {
     }
   }
 
-  firebaseApp = admin.initializeApp({
+  firebaseApp = initializeApp({
     projectId: 'dilsnap-a72fb',
   });
   return firebaseApp;
 }
 
-export function getFirestoreDb(): admin.firestore.Firestore {
-  getFirebaseAdmin();
-  return admin.firestore();
+export function getFirestoreDb(): Firestore {
+  const app = getFirebaseAdmin();
+  return getFirestore(app);
 }
 
-export function getFirebaseAuth(): admin.auth.Auth {
-  getFirebaseAdmin();
-  return admin.auth();
+export function getFirebaseAuth(): Auth {
+  const app = getFirebaseAdmin();
+  return getAuth(app);
 }
